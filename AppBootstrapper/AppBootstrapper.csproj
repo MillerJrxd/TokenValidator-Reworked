@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <OutputType Condition="'$(Configuration)' != 'ReleaseMSI'">Exe</OutputType>
+    <OutputType Condition="'$(Configuration)' == 'ReleaseMSI'">Library</OutputType>
+    <Configurations>Debug;Release;ReleaseMSI</Configurations>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Windows.Forms">
+      <HintPath>..\..\..\..\..\..\Program Files\dotnet\packs\Microsoft.WindowsDesktop.App.Ref\8.0.12\ref\net8.0\System.Windows.Forms.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'ReleaseMSI'">
+    <DefineConstants>MSI_BUILD</DefineConstants>
+  </PropertyGroup>
+
+</Project>
