@@ -6,8 +6,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
-    <OutputType Condition="'$(Configuration)' != 'ReleaseMSI'">Exe</OutputType>
-    <OutputType Condition="'$(Configuration)' == 'ReleaseMSI'">Library</OutputType>
     <Configurations>Debug;Release;ReleaseMSI</Configurations>
   </PropertyGroup>
 
@@ -17,9 +15,4 @@
       <Private>True</Private>
     </Reference>
   </ItemGroup>
-
-  <PropertyGroup Condition="'$(Configuration)' == 'ReleaseMSI'">
-    <DefineConstants>MSI_BUILD</DefineConstants>
-  </PropertyGroup>
-
 </Project>

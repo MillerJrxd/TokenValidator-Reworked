@@ -11,8 +11,6 @@ using ZXing;
 using ZXing.Common;
 using MessageBox = System.Windows.MessageBox;
 using Clipboard = System.Windows.Clipboard;
-using ZXing.Windows.Compatibility;
-using System.Windows.Input;
 using System.Windows.Threading;
 
 namespace TokenValidator
