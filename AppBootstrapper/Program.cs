@@ -1,8 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Net;
 using System.Runtime.InteropServices;
-using System.Windows.Forms;
-using static System.Net.WebRequestMethods;
 
 namespace AppBootstrapper
 {
@@ -129,7 +127,7 @@ namespace AppBootstrapper
                 if (!System.IO.File.Exists(wpfAppPath))
                 {
                     MessageBox.Show(
-                        "Main application not found. Please reinstall the software.",
+                        "Main application not found. Please install both softwares in the same directory.",
                         "Application Error",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Error);

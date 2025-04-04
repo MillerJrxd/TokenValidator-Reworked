@@ -9,7 +9,7 @@ namespace TokenValidator.Utils
 
         static HttpQuery()
         {
-            Client.DefaultRequestHeaders.Add("User-Agent", "TokenValidator/3.0.0");
+            Client.DefaultRequestHeaders.Add("User-Agent", "SCP SL Token Validation Tool");
             Client.Timeout = TimeSpan.FromSeconds(30);
         }
 

@@ -21,7 +21,7 @@
 
         <!-- Status Panel -->
         <Border x:Name="statusPanel" Grid.Row="0" Background="#2D2D30" Padding="12" Margin="0,0,0,15" CornerRadius="4">
-            <TextBlock x:Name="statusLabel" Text="Ready" Foreground="#FFFFFF" FontWeight="Bold" FontSize="20" HorizontalAlignment="Center"/>
+            <TextBlock x:Name="statusLabel" Text="Not Ready" Foreground="#FFFFFF" FontWeight="Bold" FontSize="20" HorizontalAlignment="Center"/>
         </Border>
 
         <!-- Main Content -->
@@ -83,7 +83,7 @@
         <!-- Buttons -->
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,15,0,0">
             <Button x:Name="scanQRButton" Content="Scan QR Code" Padding="20,8" Margin="0,0,12,0" 
-                    Click="ScanQR_Click" FontSize="18"/>
+                    Click="ScanQR_Click" FontSize="18" ToolTip="Press ALT + F12 to scan QR from screen around the mouse pointer."/>
             <Button x:Name="fromClipboardButton" Content="From Clipboard" Padding="20,8" Margin="12,0,0,0" 
                     Click="FromClipboard_Click" FontSize="18"/>
         </StackPanel>

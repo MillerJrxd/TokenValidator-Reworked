@@ -13,6 +13,7 @@ using MessageBox = System.Windows.MessageBox;
 using Clipboard = System.Windows.Clipboard;
 using ZXing.Windows.Compatibility;
 using System.Windows.Input;
+using System.Windows.Threading;
 
 namespace TokenValidator
 {
@@ -21,16 +22,17 @@ namespace TokenValidator
     /// </summary>
     public partial class MainWindow : Window
     {
+
         #region Hotkey and Cursor Position Detection
         //Credits to zabszk
         [DllImport("user32.dll")]
-        public static extern bool RegisterHotKey(IntPtr hWnd, int id, int fsModifiers, int vlc);
+        private static extern bool RegisterHotKey(IntPtr hWnd, int id, int fsModifiers, int vlc);
         [DllImport("user32.dll")]
-        public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+        private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
         [DllImport("user32.dll")]
-        public static extern bool GetCursorPos(out POINT lpPoint);
+        private static extern bool GetCursorPos(out POINT lpPoint);
 
-        public static System.Drawing.Point GetCursorPosition()
+        private static System.Drawing.Point GetCursorPosition()
         {
             POINT lpPoint;
             GetCursorPos(out lpPoint);
@@ -67,15 +69,24 @@ namespace TokenValidator
         private static DecodingOptions _decodeOptions;
         private static string _apiToken;
         private static bool _authenticated;
-        private CancellationTokenSource _scanCancellationTokenSource;
+        private readonly CancellationTokenSource _scanCancellationTokenSource;
+        private static readonly BarcodeReaderGeneric _barcodeReader = new BarcodeReaderGeneric
+        {
+            AutoRotate = true,
+            Options = new DecodingOptions
+            {
+                PossibleFormats = new[] { BarcodeFormat.QR_CODE },
+                TryHarder = true,
+                TryInverted = true,
+                CharacterSet = "UTF-8"
+            }
+        };
 
         public MainWindow()
         {
             InitializeComponent();
 
-            previewImage.MouseLeftButtonDown += ImageDownload;
-
-            createLogFolder();
+            CreateLogFolder();
 
             _decodeOptions = new DecodingOptions
             {
@@ -90,10 +101,31 @@ namespace TokenValidator
             string apiTokenPath = Path.Combine(appFolder, "StaffAPI.txt");
             if (File.Exists(apiTokenPath))
             {
-                _apiToken = File.ReadAllLines(apiTokenPath)[0];
-                _authenticated = true;
-                authedLabel.Text = "Authenticated using staff API token.";
-                authedLabel.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 191, 255));
+                try
+                {
+                    _apiToken = File.ReadAllLines(apiTokenPath)[0];
+                    _authenticated = true;
+                    authedLabel.Text = "Authenticated using staff API token.";
+                    authedLabel.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 191, 255));
+                    statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 191, 255));
+                    statusLabel.Text = "Ready";
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error reading StaffAPI.txt: {ex.Message}\nFile is empty or the first line does not contain your token.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
+                    _authenticated = false;
+                    authedLabel.Text = "Not authenticated using staff API token.";
+                    authedLabel.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
+                    statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
+                }
+                
+            }
+            else
+            {
+                _authenticated = false;
+                authedLabel.Text = "Not authenticated using staff API token.";
+                authedLabel.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
+                statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
             }
 
             this.Loaded += (s, e) =>
@@ -104,6 +136,13 @@ namespace TokenValidator
 
                 RegisterHotKey(wndHelper.Handle, HOTKEY_ID, (int)KeyModifier.Alt, 0x7B);
             };
+
+            if (_authenticated == false)
+            {
+                scanQRButton.IsEnabled = false;
+                fromClipboardButton.IsEnabled = false;
+                copyUserIDButton.IsEnabled = false;
+            }
         }
 
         private IntPtr HwndHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -124,21 +163,24 @@ namespace TokenValidator
 
             statusLabel.Text = "Scanning for QR codes...";
             statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(169, 169, 169)); // DarkGray
+            this.Visibility = Visibility.Hidden;
 
             try
             {
                 var screens = Screen.AllScreens;
-                var result = await Task.Run(() => ScanAllScreensForQrCode(screens));
+                var result = await Task.Run(() => ScanAllScreensForQrCodeParallel(screens));
 
                 if (result != null)
                 {
                     await ValidateTokenAsync(result);
+                    this.Visibility = Visibility.Visible;
                 }
                 else
                 {
-                    MessageBox.Show("QR code not found.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
+                    this.Visibility = Visibility.Visible;
                     statusLabel.Text = "QR code not found.";
                     statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
+                    MessageBox.Show("QR code not found.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
             catch (Exception ex)
@@ -181,13 +223,7 @@ namespace TokenValidator
 
                     DisplayBitmapInUI(screenshot);
 
-                    var reader = new BarcodeReader
-                    {
-                        AutoRotate = true,
-                        Options = _decodeOptions
-                    };
-
-                    var result = reader.Decode(screenshot);
+                    var result = _barcodeReader.Decode(screenshot);
                     if (result == null)
                     {
                         var enhancedResult = TryEnhancedScanning(screenshot);
@@ -214,44 +250,42 @@ namespace TokenValidator
             }
         }
 
-        private string ScanAllScreensForQrCode(System.Windows.Forms.Screen[] screens)
+        private async Task<string> ScanAllScreensForQrCodeParallel(System.Windows.Forms.Screen[] screens)
         {
-            foreach (var screen in screens)
+            var tasks = screens.Select(screen => Task.Run(() => ScanScreenForQrCode(screen))).ToArray();
+            var results = await Task.WhenAll(tasks);
+            return results.FirstOrDefault(r => r != null);
+        }
+
+        private string ScanScreenForQrCode(System.Windows.Forms.Screen screen)
+        {
+            using (var screenshot = new System.Drawing.Bitmap(screen.Bounds.Width, screen.Bounds.Height))
             {
-                using (var screenshot = new System.Drawing.Bitmap(screen.Bounds.Width, screen.Bounds.Height))
+                using (var graphics = System.Drawing.Graphics.FromImage(screenshot))
                 {
-                    using (var graphics = System.Drawing.Graphics.FromImage(screenshot))
-                    {
-                        graphics.CopyFromScreen(screen.Bounds.Left, screen.Bounds.Top, 0, 0, screenshot.Size);
-                    }
-
-                    Dispatcher.Invoke(() => DisplayBitmapInUI(screenshot));
-
-                    var result = ScanBitmapForQrCode(screenshot);
-                    if (result != null)
-                        return result;
-
-                    result = TryEnhancedScanning(screenshot);
-                    if (result != null)
-                        return result;
+                    graphics.CopyFromScreen(screen.Bounds.Left, screen.Bounds.Top, 0, 0, screenshot.Size);
                 }
+
+                Dispatcher.Invoke(() => DisplayBitmapInUI(screenshot));
+
+                var result = ScanBitmapForQrCode(screenshot);
+                if (result != null)
+                    return result;
+
+                result = TryEnhancedScanning(screenshot);
+                if (result != null)
+                    return result;
             }
             return null;
         }
 
-        private string ScanBitmapForQrCode(System.Drawing.Bitmap bitmap)
+        private static string ScanBitmapForQrCode(System.Drawing.Bitmap bitmap)
         {
-            var reader = new BarcodeReaderGeneric
-            {
-                AutoRotate = true,
-                Options = _decodeOptions
-            };
-
-            var result = reader.Decode(bitmap);
+            var result = _barcodeReader.Decode(bitmap);
             return result?.Text;
         }
 
-        private string TryEnhancedScanning(System.Drawing.Bitmap originalBitmap)
+        private static string TryEnhancedScanning(System.Drawing.Bitmap originalBitmap)
         {
             // Original bitmap
             var result = ScanBitmapForQrCode(originalBitmap);
@@ -272,12 +306,22 @@ namespace TokenValidator
             {
                 result = ScanBitmapForQrCode(processed);
                 if (result != null) return result;
+
+                // Also try the enhanced image at different scales
+                foreach (var scale in new[] { 0.75, 1.25 })
+                {
+                    using (var scaledProcessed = ScaleBitmap(processed, scale))
+                    {
+                        result = ScanBitmapForQrCode(scaledProcessed);
+                        if (result != null) return result;
+                    }
+                }
             }
 
             return null;
         }
 
-        private System.Drawing.Bitmap ScaleBitmap(System.Drawing.Bitmap original, double scale)
+        private static System.Drawing.Bitmap ScaleBitmap(System.Drawing.Bitmap original, double scale)
         {
             int width = (int)(original.Width * scale);
             int height = (int)(original.Height * scale);
@@ -291,7 +335,7 @@ namespace TokenValidator
             return result;
         }
 
-        private System.Drawing.Bitmap EnhanceImage(System.Drawing.Bitmap original)
+        private static System.Drawing.Bitmap EnhanceImage(System.Drawing.Bitmap original)
         {
             // Apply contrast enhancement
             var result = new System.Drawing.Bitmap(original.Width, original.Height);
@@ -300,13 +344,13 @@ namespace TokenValidator
             float brightness = 0.0f;
 
             // Color matrix to apply contrast
-            float[][] colorMatrixElements = {
-                new float[] {contrast, 0, 0, 0, 0},
-                new float[] {0, contrast, 0, 0, 0},
-                new float[] {0, 0, contrast, 0, 0},
-                new float[] {0, 0, 0, 1, 0},
-                new float[] {brightness, brightness, brightness, 0, 1}
-            };
+            float[][] colorMatrixElements = [
+                [contrast, 0, 0, 0, 0],
+                [0, contrast, 0, 0, 0],
+                [0, 0, contrast, 0, 0],
+                [0, 0, 0, 1, 0],
+                [brightness, brightness, brightness, 0, 1]
+            ];
 
             using (var graphics = System.Drawing.Graphics.FromImage(result))
             {
@@ -355,7 +399,7 @@ namespace TokenValidator
             }
         }
 
-        private Dictionary<string, string> ValidateToken(string auth)
+        private static Dictionary<string, string> ValidateToken(string auth)
         {
             try
             {
@@ -367,7 +411,7 @@ namespace TokenValidator
 
                 using (var client = new System.Net.Http.HttpClient())
                 {
-                    client.DefaultRequestHeaders.Add("User-Agent", "TokenValidator/3.0.0");
+                    client.DefaultRequestHeaders.Add("User-Agent", "SCP SL Token Validation Tool");
 
                     var content = new System.Net.Http.StringContent(
                         postData,
@@ -526,27 +570,7 @@ namespace TokenValidator
             _scanCancellationTokenSource?.Cancel();
         }
 
-        private void ImageDownload(object sender, MouseButtonEventArgs e)
-        {
-            if (previewImage.Source == null)
-                return;
-            var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create((BitmapSource)previewImage.Source));
-            var saveDialog = new Microsoft.Win32.SaveFileDialog
-            {
-                FileName = "QRCode",
-                DefaultExt = ".png",
-                Filter = "PNG Image (.png)|*.png"
-            };
-            if (saveDialog.ShowDialog() == true)
-            {
-                using (var stream = new FileStream(saveDialog.FileName, FileMode.Create))
-                {
-                    encoder.Save(stream);
-                }
-            }
-        }
-        private void createLogFolder()
+        private static void CreateLogFolder()
         {
             string appFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TokenValidator");
             if (!Directory.Exists(appFolder))
