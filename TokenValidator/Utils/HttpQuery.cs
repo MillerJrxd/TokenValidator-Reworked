@@ -5,34 +5,35 @@ namespace TokenValidator.Utils
 {
     public class HttpQuery
     {
-        private static readonly HttpClient Client = new HttpClient();
+        private static readonly HttpClient Client;
+        private static readonly SemaphoreSlim RequestSemaphore = new(8, 8);
+        private const int DefaultTimeoutSeconds = 30;
 
         static HttpQuery()
         {
+            var handler = new HttpClientHandler
+            {
+                MaxConnectionsPerServer = 20,
+                AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
+            };
+
+            Client = new HttpClient(handler)
+            {
+                Timeout = TimeSpan.FromSeconds(DefaultTimeoutSeconds)
+            };
+
             Client.DefaultRequestHeaders.Add("User-Agent", "SCP SL Token Validation Tool");
-            Client.Timeout = TimeSpan.FromSeconds(30);
+            Client.DefaultRequestHeaders.Add("Accept", "application/json");
+            Client.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate");
+            Client.DefaultRequestHeaders.Connection.Add("keep-alive");
         }
 
         public static string Post(string url, string postData)
         {
-            var content = new StringContent(
-                postData,
-                Encoding.UTF8,
-                "application/x-www-form-urlencoded");
-
-            try
-            {
-                var response = Client.PostAsync(url, content).Result;
-                response.EnsureSuccessStatusCode();
-                return response.Content.ReadAsStringAsync().Result;
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"HTTP Post failed: {ex.Message}", ex);
-            }
+            return PostAsync(url, postData).GetAwaiter().GetResult();
         }
 
-        public static async Task<string> PostAsync(string url, string postData)
+        public static async Task<string> PostAsync(string url, string postData, CancellationToken cancellationToken = default)
         {
             var content = new StringContent(
                 postData,
@@ -41,41 +42,90 @@ namespace TokenValidator.Utils
 
             try
             {
-                var response = await Client.PostAsync(url, content);
-                response.EnsureSuccessStatusCode();
-                return await response.Content.ReadAsStringAsync();
+                await RequestSemaphore.WaitAsync(cancellationToken);
+
+                using (var request = new HttpRequestMessage(HttpMethod.Post, url))
+                {
+                    request.Content = content;
+
+                    using (var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
+                    {
+                        response.EnsureSuccessStatusCode();
+                        return await response.Content.ReadAsStringAsync();
+                    }
+                }
+            }
+            catch (TaskCanceledException)
+            {
+                throw new TimeoutException("The request timed out. Please check your network connection.");
+            }
+            catch (HttpRequestException ex)
+            {
+                throw new Exception($"HTTP Post failed: {ex.Message}", ex);
             }
             catch (Exception ex)
             {
                 throw new Exception($"HTTP Post failed: {ex.Message}", ex);
+            }
+            finally
+            {
+                RequestSemaphore.Release();
             }
         }
 
         public static string Get(string url)
         {
-            try
-            {
-                var response = Client.GetAsync(url).Result;
-                response.EnsureSuccessStatusCode();
-                return response.Content.ReadAsStringAsync().Result;
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"HTTP Get failed: {ex.Message}", ex);
-            }
+            return GetAsync(url).GetAwaiter().GetResult();
         }
 
-        public static async Task<string> GetAsync(string url)
+        public static async Task<string> GetAsync(string url, CancellationToken cancellationToken = default)
         {
             try
             {
-                var response = await Client.GetAsync(url);
-                response.EnsureSuccessStatusCode();
-                return await response.Content.ReadAsStringAsync();
+                await RequestSemaphore.WaitAsync(cancellationToken);
+
+                using (var request = new HttpRequestMessage(HttpMethod.Get, url))
+                {
+                    using (var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
+                    {
+                        response.EnsureSuccessStatusCode();
+                        return await response.Content.ReadAsStringAsync();
+                    }
+                }
+            }
+            catch (TaskCanceledException)
+            {
+                throw new TimeoutException("The request timed out. Please check your network connection.");
+            }
+            catch (HttpRequestException ex)
+            {
+                throw new Exception($"HTTP Get failed: {ex.Message}", ex);
             }
             catch (Exception ex)
             {
                 throw new Exception($"HTTP Get failed: {ex.Message}", ex);
+            }
+            finally
+            {
+                RequestSemaphore.Release();
+            }
+        }
+
+        public static void ResetClient()
+        {
+            try
+            {
+                Client.DefaultRequestHeaders.Clear();
+                Client.DefaultRequestHeaders.Add("User-Agent", "SCP SL Token Validation Tool");
+                Client.DefaultRequestHeaders.Add("Accept", "application/json");
+                Client.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate");
+                Client.DefaultRequestHeaders.Connection.Add("keep-alive");
+
+                Client.Timeout = TimeSpan.FromSeconds(DefaultTimeoutSeconds);
+            }
+            catch (Exception)
+            {
+
             }
         }
     }

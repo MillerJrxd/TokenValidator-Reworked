@@ -6,12 +6,10 @@ using System.Text;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using ZXing;
 using ZXing.Common;
 using MessageBox = System.Windows.MessageBox;
 using Clipboard = System.Windows.Clipboard;
-using System.Windows.Threading;
 
 namespace TokenValidator
 {
@@ -63,7 +61,7 @@ namespace TokenValidator
 
         #endregion
 
-        private const string MsgHeader = "SCP:SL Token Validator v3.0.0";
+        private const string MsgHeader = "SCP:SL Token Validator v1.3.0";
         private static DecodingOptions _decodeOptions;
         private static string _apiToken;
         private static bool _authenticated;
@@ -219,8 +217,6 @@ namespace TokenValidator
                         graphics.CopyFromScreen(pos.X - scanSize / 2, pos.Y - scanSize / 2, 0, 0, screenshot.Size);
                     }
 
-                    DisplayBitmapInUI(screenshot);
-
                     var result = _barcodeReader.Decode(screenshot);
                     if (result == null)
                     {
@@ -263,8 +259,6 @@ namespace TokenValidator
                 {
                     graphics.CopyFromScreen(screen.Bounds.Left, screen.Bounds.Top, 0, 0, screenshot.Size);
                 }
-
-                Dispatcher.Invoke(() => DisplayBitmapInUI(screenshot));
 
                 var result = ScanBitmapForQrCode(screenshot);
                 if (result != null)
@@ -364,17 +358,6 @@ namespace TokenValidator
                     attributes);
             }
             return result;
-        }
-
-        private void DisplayBitmapInUI(System.Drawing.Bitmap bitmap)
-        {
-            var bitmapSource = Imaging.CreateBitmapSourceFromHBitmap(
-                bitmap.GetHbitmap(),
-                IntPtr.Zero,
-                Int32Rect.Empty,
-                BitmapSizeOptions.FromEmptyOptions());
-
-            previewImage.Source = bitmapSource;
         }
 
         private async Task ValidateTokenAsync(string token)
@@ -532,7 +515,6 @@ namespace TokenValidator
             nicknameLabel.Text = "";
             issuanceLabel.Text = "";
             expirationLabel.Text = "";
-            previewImage.Source = null;
         }
 
         private static string Base64Decode(string base64EncodedData)
