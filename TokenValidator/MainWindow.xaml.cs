@@ -10,6 +10,8 @@ using ZXing;
 using ZXing.Common;
 using MessageBox = System.Windows.MessageBox;
 using Clipboard = System.Windows.Clipboard;
+using TokenValidator.Utils;
+using ZXing.Windows.Compatibility;
 
 namespace TokenValidator
 {
@@ -58,39 +60,21 @@ namespace TokenValidator
             Shift = 4,
             WinKey = 8
         }
-
         #endregion
 
         private const string MsgHeader = "SCP:SL Token Validator v1.3.0";
-        private static DecodingOptions _decodeOptions;
         private static string _apiToken;
         private static bool _authenticated;
-        private readonly CancellationTokenSource _scanCancellationTokenSource;
-        private static readonly BarcodeReaderGeneric _barcodeReader = new BarcodeReaderGeneric
-        {
-            AutoRotate = true,
-            Options = new DecodingOptions
-            {
-                PossibleFormats = new[] { BarcodeFormat.QR_CODE },
-                TryHarder = true,
-                TryInverted = true,
-                CharacterSet = "UTF-8"
-            }
-        };
+        private readonly CancellationTokenSource _scanCancellationTokenSource = new CancellationTokenSource();
+        private readonly Scan _qrScanner = new Scan();
+        private bool _isScanning = false;
+        private System.Threading.Timer _scanTimeoutTimer;
 
         public MainWindow()
         {
             InitializeComponent();
 
             CreateLogFolder();
-
-            _decodeOptions = new DecodingOptions
-            {
-                PossibleFormats = new[] { BarcodeFormat.QR_CODE },
-                TryHarder = true,
-                TryInverted = true,
-                CharacterSet = "UTF-8"
-            };
 
             string appFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "/SCP Secret Laboratory/");
 
@@ -114,7 +98,7 @@ namespace TokenValidator
                     authedLabel.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
                     statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
                 }
-                
+
             }
             else
             {
@@ -124,7 +108,7 @@ namespace TokenValidator
                 statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
             }
 
-            this.Loaded += (s, e) =>
+            Loaded += (s, e) =>
             {
                 var wndHelper = new WindowInteropHelper(this);
                 _source = HwndSource.FromHwnd(wndHelper.Handle);
@@ -154,40 +138,88 @@ namespace TokenValidator
 
         private async void ScanQR_Click(object sender, RoutedEventArgs e)
         {
+            if (_isScanning)
+                return;
+
+            _isScanning = true;
             scanQRButton.IsEnabled = false;
             fromClipboardButton.IsEnabled = false;
+            copyUserIDButton.IsEnabled = false;
+
+            double left = Left;
+            double top = Top;
+            double width = Width;
+            double height = Height;
 
             statusLabel.Text = "Scanning for QR codes...";
-            statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(169, 169, 169)); // DarkGray
-            this.Visibility = Visibility.Hidden;
+            statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(169, 169, 169));
 
-            try
+            Visibility = Visibility.Hidden;
+            await Task.Delay(100);
+
+            using (var timeoutCts = new CancellationTokenSource(10000))
             {
-                var screens = Screen.AllScreens;
-                var result = await Task.Run(() => ScanAllScreensForQrCodeParallel(screens));
+                try
+                {
+                    var screens = System.Windows.Forms.Screen.AllScreens;
 
-                if (result != null)
-                {
-                    await ValidateTokenAsync(result);
-                    this.Visibility = Visibility.Visible;
+                    var timeoutTask = Task.Delay(10000, timeoutCts.Token);
+
+                    var scanTask = _qrScanner.ScanAllScreensAsync(screens);
+
+                    var completedTask = await Task.WhenAny(scanTask, timeoutTask);
+
+                    Visibility = Visibility.Visible;
+
+                    if (completedTask == scanTask)
+                    {
+                        timeoutCts.Cancel();
+                        var result = await scanTask;
+
+                        if (result != null)
+                        {
+                            await ValidateTokenAsync(result);
+                        }
+                        else
+                        {
+                            statusLabel.Text = "QR code not found.";
+                            statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
+                            MessageBox.Show("QR code not found.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
+                        }
+                    }
+                    else
+                    {
+                        _qrScanner.CancelScan();
+
+                        statusLabel.Text = "Scan timed out.";
+                        statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
+                        MessageBox.Show("QR code scan timed out. Please try again.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    this.Visibility = Visibility.Visible;
-                    statusLabel.Text = "QR code not found.";
+                    Visibility = Visibility.Visible;
+                    statusLabel.Text = "Scan error: " + ex.Message;
                     statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
-                    MessageBox.Show("QR code not found.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show($"Error scanning QR code: {ex.Message}", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
-            catch (Exception ex)
+
+            if (Left != left || Top != top)
             {
-                MessageBox.Show($"Error scanning QR code: {ex.Message}", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
+                Left = left;
+                Top = top;
+                Width = width;
+                Height = height;
             }
-            finally
-            {
-                scanQRButton.IsEnabled = true;
-                fromClipboardButton.IsEnabled = true;
-            }
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+
+            _isScanning = false;
+            scanQRButton.IsEnabled = true;
+            fromClipboardButton.IsEnabled = true;
+            copyUserIDButton.IsEnabled = _authenticated;
         }
 
         private async void FromClipboard_Click(object sender, RoutedEventArgs e)
@@ -203,161 +235,65 @@ namespace TokenValidator
             fromClipboardButton.IsEnabled = true;
         }
 
-        private void ScanQRAtCursor()
+        private async void ScanQRAtCursor()
         {
-            try
+            if (_isScanning)
+                return;
+
+            _isScanning = true;
+
+            using (var timeoutCts = new CancellationTokenSource(5000))
             {
-                var pos = GetCursorPosition();
-                int scanSize = 900;
-
-                using (var screenshot = new System.Drawing.Bitmap(scanSize, scanSize))
+                try
                 {
-                    using (var graphics = System.Drawing.Graphics.FromImage(screenshot))
-                    {
-                        graphics.CopyFromScreen(pos.X - scanSize / 2, pos.Y - scanSize / 2, 0, 0, screenshot.Size);
-                    }
+                    var pos = GetCursorPosition();
 
-                    var result = _barcodeReader.Decode(screenshot);
+                    var screenshot = new Bitmap(900, 900);
+                    var graphics = Graphics.FromImage(screenshot);
+                    graphics.CopyFromScreen(pos.X - 450, pos.Y - 450, 0, 0, screenshot.Size);
+
+                    var bitmap = new Bitmap(screenshot);
+
+                    BarcodeReaderGeneric barcodeReader = new BarcodeReaderGeneric
+                    {
+                        AutoRotate = true,
+                        Options = new DecodingOptions
+                        {
+                            PossibleFormats = new[] { BarcodeFormat.QR_CODE },
+                            TryHarder = true,
+                            TryInverted = true,
+                            CharacterSet = "UTF-8"
+                        }
+                    };
+
+                    Result result = barcodeReader.Decode(bitmap);
+
                     if (result == null)
                     {
-                        var enhancedResult = TryEnhancedScanning(screenshot);
-                        if (enhancedResult == null)
-                        {
-                            MessageBox.Show("QR code not found.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
-                            return;
-                        }
-                        else
-                        {
-                            var _ = ValidateTokenAsync(enhancedResult);
-                        }
+                        MessageBox.Show("QR code not found.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
+                        return;
                     }
                     else
                     {
                         string decoded = result.ToString().Trim();
-                        var _ = ValidateTokenAsync(decoded);
+                        await ValidateTokenAsync(decoded);
                     }
+                    //else
+                    //{
+                    //    _qrScanner.CancelScan();
+                    //    MessageBox.Show("QR code scan timed out. Please try again.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
+                    //}
                 }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error scanning QR code: {ex.Message}", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private async Task<string> ScanAllScreensForQrCodeParallel(System.Windows.Forms.Screen[] screens)
-        {
-            var tasks = screens.Select(screen => Task.Run(() => ScanScreenForQrCode(screen))).ToArray();
-            var results = await Task.WhenAll(tasks);
-            return results.FirstOrDefault(r => r != null);
-        }
-
-        private string ScanScreenForQrCode(System.Windows.Forms.Screen screen)
-        {
-            using (var screenshot = new System.Drawing.Bitmap(screen.Bounds.Width, screen.Bounds.Height))
-            {
-                using (var graphics = System.Drawing.Graphics.FromImage(screenshot))
+                catch (Exception ex)
                 {
-                    graphics.CopyFromScreen(screen.Bounds.Left, screen.Bounds.Top, 0, 0, screenshot.Size);
-                }
-
-                var result = ScanBitmapForQrCode(screenshot);
-                if (result != null)
-                    return result;
-
-                result = TryEnhancedScanning(screenshot);
-                if (result != null)
-                    return result;
-            }
-            return null;
-        }
-
-        private static string ScanBitmapForQrCode(System.Drawing.Bitmap bitmap)
-        {
-            var result = _barcodeReader.Decode(bitmap);
-            return result?.Text;
-        }
-
-        private static string TryEnhancedScanning(System.Drawing.Bitmap originalBitmap)
-        {
-            // Original bitmap
-            var result = ScanBitmapForQrCode(originalBitmap);
-            if (result != null) return result;
-
-            // Different scales
-            foreach (var scale in new[] { 0.5, 0.75, 1.25, 1.5, 2.0 })
-            {
-                using (var scaled = ScaleBitmap(originalBitmap, scale))
-                {
-                    result = ScanBitmapForQrCode(scaled);
-                    if (result != null) return result;
+                    MessageBox.Show($"Error scanning QR code: {ex.Message}", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
 
-            // Different processing options
-            using (var processed = EnhanceImage(originalBitmap))
-            {
-                result = ScanBitmapForQrCode(processed);
-                if (result != null) return result;
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
 
-                // Also try the enhanced image at different scales
-                foreach (var scale in new[] { 0.75, 1.25 })
-                {
-                    using (var scaledProcessed = ScaleBitmap(processed, scale))
-                    {
-                        result = ScanBitmapForQrCode(scaledProcessed);
-                        if (result != null) return result;
-                    }
-                }
-            }
-
-            return null;
-        }
-
-        private static System.Drawing.Bitmap ScaleBitmap(System.Drawing.Bitmap original, double scale)
-        {
-            int width = (int)(original.Width * scale);
-            int height = (int)(original.Height * scale);
-
-            var result = new System.Drawing.Bitmap(width, height);
-            using (var graphics = System.Drawing.Graphics.FromImage(result))
-            {
-                graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-                graphics.DrawImage(original, 0, 0, width, height);
-            }
-            return result;
-        }
-
-        private static System.Drawing.Bitmap EnhanceImage(System.Drawing.Bitmap original)
-        {
-            // Apply contrast enhancement
-            var result = new System.Drawing.Bitmap(original.Width, original.Height);
-
-            float contrast = 1.5f;
-            float brightness = 0.0f;
-
-            // Color matrix to apply contrast
-            float[][] colorMatrixElements = [
-                [contrast, 0, 0, 0, 0],
-                [0, contrast, 0, 0, 0],
-                [0, 0, contrast, 0, 0],
-                [0, 0, 0, 1, 0],
-                [brightness, brightness, brightness, 0, 1]
-            ];
-
-            using (var graphics = System.Drawing.Graphics.FromImage(result))
-            {
-                var colorMatrix = new System.Drawing.Imaging.ColorMatrix(colorMatrixElements);
-                var attributes = new System.Drawing.Imaging.ImageAttributes();
-                attributes.SetColorMatrix(colorMatrix);
-
-                graphics.DrawImage(
-                    original,
-                    new System.Drawing.Rectangle(0, 0, original.Width, original.Height),
-                    0, 0, original.Width, original.Height,
-                    System.Drawing.GraphicsUnit.Pixel,
-                    attributes);
-            }
-            return result;
+            _isScanning = false;
         }
 
         private async Task ValidateTokenAsync(string token)
@@ -365,7 +301,7 @@ namespace TokenValidator
             ClearResults();
 
             statusLabel.Text = "Token validation in progress...";
-            statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(169, 169, 169)); // DarkGray
+            statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(169, 169, 169));
 
             try
             {
@@ -376,7 +312,7 @@ namespace TokenValidator
             catch (Exception ex)
             {
                 statusLabel.Text = $"Token validation failed: {ex.Message}";
-                statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(169, 169, 169)); // DarkGray
+                statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(169, 169, 169));
             }
         }
 
@@ -420,14 +356,14 @@ namespace TokenValidator
             if (decoded["success"] == "false")
             {
                 statusLabel.Text = "Error: " + decoded["error"];
-                statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60)); // Crimson
+                statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
                 return;
             }
 
             if (decoded["verified"] == "false")
             {
                 statusLabel.Text = "Digital signature invalid";
-                statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60)); // Crimson
+                statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
                 return;
             }
 
@@ -452,12 +388,12 @@ namespace TokenValidator
                 if (!isNewToken)
                 {
                     statusLabel.Text = "Signature verification successful, token is old.";
-                    statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(102, 205, 170)); // MediumAquamarine
+                    statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(102, 205, 170));
                 }
                 else
                 {
                     statusLabel.Text = "Signature verification successful";
-                    statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 191, 255)); // DeepSkyBlue
+                    statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 191, 255));
                 }
                 return;
             }
@@ -470,12 +406,12 @@ namespace TokenValidator
                 if (!isNewToken)
                 {
                     statusLabel.Text = "Signature verification successful, token is old.";
-                    statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(102, 205, 170)); // MediumAquamarine
+                    statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(102, 205, 170));
                 }
                 else
                 {
                     statusLabel.Text = "Signature verification successful, not banned in any game.";
-                    statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 128, 128)); // Teal
+                    statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 128, 128));
                 }
             }
             else
@@ -485,12 +421,12 @@ namespace TokenValidator
                     if (!isNewToken)
                     {
                         statusLabel.Text = "Signature verification successful, banned in SCP:SL, token is old.";
-                        statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 69, 0)); // OrangeRed
+                        statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 69, 0));
                     }
                     else
                     {
                         statusLabel.Text = "Signature verification successful, banned in SCP:SL.";
-                        statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 69, 0)); // OrangeRed
+                        statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 69, 0));
                     }
                 }
                 else
@@ -498,12 +434,12 @@ namespace TokenValidator
                     if (!isNewToken)
                     {
                         statusLabel.Text = "Signature verification successful, banned in other games, token is old.";
-                        statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 140, 0)); // DarkOrange
+                        statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 140, 0));
                     }
                     else
                     {
                         statusLabel.Text = "Signature verification successful, banned in other games.";
-                        statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 165, 0)); // Orange
+                        statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 165, 0));
                     }
                 }
             }
@@ -548,6 +484,17 @@ namespace TokenValidator
             }
 
             _scanCancellationTokenSource?.Cancel();
+            _scanTimeoutTimer?.Dispose();
+            _qrScanner.CancelScan();
+
+            Task.Delay(100).Wait();
+
+            _scanCancellationTokenSource?.Dispose();
+            _scanTimeoutTimer = null;
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
         }
 
         private static void CreateLogFolder()
@@ -558,7 +505,6 @@ namespace TokenValidator
                 Directory.CreateDirectory(appFolder);
                 return;
             }
-            return;
         }
     }
 }

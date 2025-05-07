@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:TokenValidator"
         mc:Ignorable="d"
-        Title="SCP:SL Token Validator v3.0.0" 
+        Title="SCP:SL Token Validator v1.4.0" 
         Height="500" Width="850"
         MinHeight="500" MinWidth="650"
         MaxHeight="650" MaxWidth="850"
