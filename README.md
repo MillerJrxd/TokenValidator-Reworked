@@ -1,11 +1,23 @@
 # TokenValidator-Reworked
 
 ## Installation
-   - Download the latest release **TokenValidator-release.zip**
-   - Unpack the zip's content to the desired location
-   - If you are not sure that you have .NET 9 installed on your machine, run **AppBootstrapper.exe** first, that should install it for you. 
-      - *If for any reason it fails to do so, please install it manually from [here](https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/sdk-9.0.200-windows-x64-installer).*
-   - If .NET 9 is already installed on your machine just run the **TokenValidator.exe** and you should be good to go.
+   - If you know that you have .NET 9 installed on your machine, you can simply download **TokenValidator-release.zip**
+        - Unpack the zip's content to the desired location
+        - Run the **TokenValidator.exe**
+        - Done
+   - If you are unsure whether you have .NET 9 installed on your machine, download **TokenValidator-bootstrap-release.zip**
+      - Unpack the zip's content to the desired location    
+      - Run **AppBootstrapper.exe** first, that should install .NET 9 for you
+         - This requires .NET 8 to be installed
+      - *If for any reason it fails to do so, please install it manually from [here](https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/sdk-9.0.200-windows-x64-installer)*
+      - After installing .NET 9, you can delete the following files if they are bothering you:
+         - win - x64 folder
+         - AppBootstrapper.deps.json
+         - AppBootstrapper.dll
+         - AppBootstrapper.exe
+         - AppBootstrapper.pdb
+         - AppBootstrapper.runtimeconfig.json
+       - Done    
 
 ## Credits
 
