@@ -33,7 +33,7 @@ namespace TokenValidator
                     "TokenValidator",
                     "error.log");
 
-                string errorLog = $"[{DateTime.Now}] {source}: {exception.Message}\r\n{exception.StackTrace}\r\n\r\n";
+                string errorLog = $"[{DateTime.Now}] {source}: {exception.Message}\r\n{exception.GetType().FullName}\r\n{exception.StackTrace}\r\n\r\n";
                 System.IO.File.AppendAllText(logPath, errorLog);
             }
             catch

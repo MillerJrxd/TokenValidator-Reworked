@@ -1,4 +1,5 @@
 ﻿using System.Drawing.Imaging;
+using TokenValidator.Utils;
 
 namespace TokenValidator.Models
 {
@@ -36,6 +37,7 @@ namespace TokenValidator.Models
             }
             catch (Exception ex)
             {
+                Logging.LogException(ex);
                 throw;
             }
         }

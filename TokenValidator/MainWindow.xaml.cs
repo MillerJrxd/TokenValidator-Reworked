@@ -11,7 +11,6 @@ using ZXing.Common;
 using MessageBox = System.Windows.MessageBox;
 using Clipboard = System.Windows.Clipboard;
 using TokenValidator.Utils;
-using ZXing.Windows.Compatibility;
 
 namespace TokenValidator
 {
@@ -62,7 +61,7 @@ namespace TokenValidator
         }
         #endregion
 
-        private const string MsgHeader = "SCP:SL Token Validator v1.3.0";
+        private const string MsgHeader = "SCP:SL Token Validator v1.5.0";
         private static string _apiToken;
         private static bool _authenticated;
         private readonly CancellationTokenSource _scanCancellationTokenSource = new CancellationTokenSource();
@@ -75,6 +74,7 @@ namespace TokenValidator
             InitializeComponent();
 
             CreateLogFolder();
+            Logging.ClearLogs();
 
             string appFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "/SCP Secret Laboratory/");
 
@@ -278,11 +278,6 @@ namespace TokenValidator
                         string decoded = result.ToString().Trim();
                         await ValidateTokenAsync(decoded);
                     }
-                    //else
-                    //{
-                    //    _qrScanner.CancelScan();
-                    //    MessageBox.Show("QR code scan timed out. Please try again.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
-                    //}
                 }
                 catch (Exception ex)
                 {
@@ -505,6 +500,24 @@ namespace TokenValidator
                 Directory.CreateDirectory(appFolder);
                 return;
             }
+        }
+
+        private void TitleBar_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (e.ButtonState == System.Windows.Input.MouseButtonState.Pressed)
+            {
+                this.DragMove();
+            }
+        }
+
+        private void MinimizeButton_Click(object sender, RoutedEventArgs e)
+        {
+            this.WindowState = WindowState.Minimized;
+        }
+
+        private void CloseButton_Click(object sender, RoutedEventArgs e)
+        {
+            this.Close();
         }
     }
 }

@@ -55,17 +55,20 @@ namespace TokenValidator.Utils
                     }
                 }
             }
-            catch (TaskCanceledException)
+            catch (TaskCanceledException ex)
             {
-                throw new TimeoutException("The request timed out. Please check your network connection.");
+                Logging.LogException(ex);
+                throw new TimeoutException("The request timed out. Please check your network connection.\nA log has been created.");
             }
             catch (HttpRequestException ex)
             {
-                throw new Exception($"HTTP Post failed: {ex.Message}", ex);
+                Logging.LogException(ex);
+                throw new Exception($"HTTP Post failed: {ex.Message}\nA log has been created.", ex);
             }
             catch (Exception ex)
             {
-                throw new Exception($"HTTP Post failed: {ex.Message}", ex);
+                Logging.LogException(ex);
+                throw new Exception($"HTTP Post failed: {ex.Message}\nA log has been created.", ex);
             }
             finally
             {
@@ -93,17 +96,20 @@ namespace TokenValidator.Utils
                     }
                 }
             }
-            catch (TaskCanceledException)
+            catch (TaskCanceledException ex)
             {
-                throw new TimeoutException("The request timed out. Please check your network connection.");
+                Logging.LogException(ex);
+                throw new TimeoutException("The request timed out. Please check your network connection.\nA log has been created.");
             }
             catch (HttpRequestException ex)
             {
-                throw new Exception($"HTTP Get failed: {ex.Message}", ex);
+                Logging.LogException(ex);
+                throw new Exception($"HTTP Get failed: {ex.Message}\nA log has been created.", ex);
             }
             catch (Exception ex)
             {
-                throw new Exception($"HTTP Get failed: {ex.Message}", ex);
+                Logging.LogException(ex);
+                throw new Exception($"HTTP Get failed: {ex.Message}\nA log has been created.", ex);
             }
             finally
             {
@@ -123,9 +129,9 @@ namespace TokenValidator.Utils
 
                 Client.Timeout = TimeSpan.FromSeconds(DefaultTimeoutSeconds);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-
+                Logging.LogException(ex);
             }
         }
     }

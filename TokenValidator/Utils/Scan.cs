@@ -22,7 +22,6 @@ namespace TokenValidator.Utils
         };
 
         private CancellationTokenSource _scanCancellationTokenSource;
-        private bool _disposed = false;
         private readonly object _lockObject = new object();
 
         public Scan()
@@ -56,9 +55,9 @@ namespace TokenValidator.Utils
                         _scanCancellationTokenSource.Cancel();
                     }
                 }
-                catch (ObjectDisposedException)
+                catch (ObjectDisposedException ex)
                 {
-                    
+                    Logging.LogException(ex);
                 }
                 finally
                 {
@@ -88,9 +87,9 @@ namespace TokenValidator.Utils
                         _scanCancellationTokenSource.Dispose();
                     }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    
+                    Logging.LogException(ex);
                 }
 
                 _scanCancellationTokenSource = new CancellationTokenSource();
@@ -109,7 +108,6 @@ namespace TokenValidator.Utils
                     cancellationToken.Register(() => tcs.TrySetCanceled());
 
                     var tasks = new List<Task>();
-
                     var timeoutTask = Task.Delay(8000, internalCts.Token)
                         .ContinueWith(t =>
                         {
@@ -138,6 +136,10 @@ namespace TokenValidator.Utils
                             {
                                 
                             }
+                            catch (Exception ex)
+                            {
+                                Logging.LogException(ex);
+                            }
                         }, internalCts.Token);
 
                         tasks.Add(task);
@@ -147,31 +149,23 @@ namespace TokenValidator.Utils
 
                     internalCts.Cancel();
 
-                    if (resultTask == tcs.Task && !tcs.Task.IsCanceled)
+                    try
                     {
-                        if (resultFound.TryDequeue(out string qrResult))
-                        {
-                            return qrResult;
-                        }
+                        await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromMilliseconds(500));
                     }
-                    await Task.WhenAll(tasks.Select(t => t.ContinueWith(_ => { }, TaskContinuationOptions.ExecuteSynchronously)));
+                    catch
+                    {
+                        
+                    }
 
-                    foreach (var task in tasks)
+                    if (resultFound.TryDequeue(out string qrResult))
                     {
-                        if (task.Status != TaskStatus.RanToCompletion)
-                        {
-                            task.Dispose();
-                        }
+                        return qrResult;
                     }
-                    tasks.Clear();
 
                     return null;
                 }
-                catch (TaskCanceledException)
-                {
-                    return null;
-                }
-                catch (OperationCanceledException)
+                catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
                 {
                     return null;
                 }
@@ -196,20 +190,18 @@ namespace TokenValidator.Utils
                         graphics.CopyFromScreen(screen.Bounds.Left, screen.Bounds.Top, 0, 0, screenshot.Size);
                     }
 
-                    if (cancellationToken.IsCancellationRequested)
-                        return null;
+                    cancellationToken.ThrowIfCancellationRequested();
 
                     var result = ScanBitmapForQrCode(screenshot);
                     if (result != null)
                         return result;
 
-                    if (cancellationToken.IsCancellationRequested)
-                        return null;
+                    cancellationToken.ThrowIfCancellationRequested();
 
                     int gridSize = 2;
                     int sectionWidth = screenshot.Width / gridSize;
                     int sectionHeight = screenshot.Height / gridSize;
-                    int overlap = 100; 
+                    int overlap = 100;
 
                     var sections = new List<(int x, int y, int width, int height)>();
 
@@ -217,6 +209,8 @@ namespace TokenValidator.Utils
                     {
                         for (int x = 0; x < gridSize; x++)
                         {
+                            cancellationToken.ThrowIfCancellationRequested();
+
                             int startX = Math.Max(0, x * sectionWidth - overlap);
                             int startY = Math.Max(0, y * sectionHeight - overlap);
                             int width = Math.Min(sectionWidth + 2 * overlap, screenshot.Width - startX);
@@ -226,33 +220,45 @@ namespace TokenValidator.Utils
                         }
                     }
 
+                    var sectionTasks = new List<Task<string>>();
                     foreach (var section in sections)
                     {
-                        if (cancellationToken.IsCancellationRequested)
-                            return null;
+                        cancellationToken.ThrowIfCancellationRequested();
 
-                        using (var sectionBitmap = screenshot.Clone(
-                            new Rectangle(section.x, section.y, section.width, section.height),
-                            screenshot.PixelFormat))
+                        sectionTasks.Add(Task.Run(() =>
                         {
-                            var sectionResult = await Task.Run(() => TryEnhancedScanning(sectionBitmap, cancellationToken), cancellationToken);
-                            if (sectionResult != null)
-                                return sectionResult;
-                        }
+                            using (var sectionBitmap = screenshot.Clone(
+                                new Rectangle(section.x, section.y, section.width, section.height),
+                                screenshot.PixelFormat))
+                            {
+                                return TryEnhancedScanning(sectionBitmap, cancellationToken);
+                            }
+                        }, cancellationToken));
+                    }
+
+                    var completedTask = await Task.WhenAny(sectionTasks);
+                    if (completedTask.IsCompletedSuccessfully && completedTask.Result != null)
+                    {
+                        return completedTask.Result;
                     }
                 }
             }
-            catch (Exception)
+            catch (OperationCanceledException)
             {
+                
+            }
+            catch (Exception ex)
+            {
+                Logging.LogException(ex);
                 if (!cancellationToken.IsCancellationRequested)
                 {
                     throw;
                 }
             }
-
             return null;
         }
 
+        //Unused
         public async Task<string> ScanAtCursorAsync(System.Drawing.Point cursorPosition, int scanSize = 900)
         {
             ResetCancellationToken();
@@ -292,12 +298,14 @@ namespace TokenValidator.Utils
                             return null;
                         }
                     }
-                    catch (OperationCanceledException)
+                    catch (OperationCanceledException ex)
                     {
+                        Logging.LogException(ex);
                         return null;
                     }
                     catch (Exception ex)
                     {
+                        Logging.LogException(ex);
                         if (!timeoutCts.Token.IsCancellationRequested)
                         {
                             throw;
@@ -326,11 +334,7 @@ namespace TokenValidator.Utils
             if (result != null) return result;
             if (cancellationToken.IsCancellationRequested) return null;
 
-            double[] scales = [0.75, 1.25, 1.5];
-
-            int[] processingPriority = [1, 0]; 
-
-            foreach (int processingLevel in processingPriority)
+            foreach (int processingLevel in new[] { 1, 0 })
             {
                 if (cancellationToken.IsCancellationRequested) return null;
 
@@ -340,9 +344,7 @@ namespace TokenValidator.Utils
                     if (result != null) return result;
                     if (cancellationToken.IsCancellationRequested) return null;
 
-                    double[] priorityScales = processingLevel < 1 ? scales : [1.25];
-
-                    foreach (var scale in priorityScales)
+                    foreach (var scale in processingLevel < 1 ? new[] { 0.75, 1.25, 1.5 } : new[] { 1.25 })
                     {
                         if (cancellationToken.IsCancellationRequested) return null;
 
@@ -498,7 +500,6 @@ namespace TokenValidator.Utils
                         fastResult.SetPixel(x, y, newColor);
                     }
                 }
-
                 fastResult.UnlockBits();
                 fastOriginal.UnlockBits();
             }
