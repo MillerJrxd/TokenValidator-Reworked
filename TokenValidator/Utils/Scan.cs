@@ -167,6 +167,7 @@ namespace TokenValidator.Utils
                 }
                 catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
                 {
+                    Logging.LogException(ex);
                     return null;
                 }
                 finally

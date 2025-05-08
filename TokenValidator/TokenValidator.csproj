@@ -22,5 +22,4 @@
   <ItemGroup>
     <Resource Include="Resources\icon.ico" />
   </ItemGroup>
-
 </Project>
