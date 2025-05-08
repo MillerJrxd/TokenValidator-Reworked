@@ -7,8 +7,9 @@
         - Done
    - If you are unsure whether you have .NET 9 installed on your machine, download **TokenValidator-bootstrap-release.zip**
       - Unpack the zip's content to the desired location    
-      - Run **AppBootstrapper.exe** first, that should install .NET 9 for you. 
-      - *If for any reason it fails to do so, please install it manually from [here](https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/sdk-9.0.200-windows-x64-installer).*
+      - Run **AppBootstrapper.exe** first, that should install .NET 9 for you
+         - This requires .NET 8 to be installed
+      - *If for any reason it fails to do so, please install it manually from [here](https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/sdk-9.0.200-windows-x64-installer)*
       - After installing .NET 9, you can delete the following files if they are bothering you:
          - win - x64 folder
          - AppBootstrapper.deps.json
