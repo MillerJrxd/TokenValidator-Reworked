@@ -30,7 +30,7 @@ namespace TokenValidator.Models
                     ImageLockMode.ReadWrite, source.PixelFormat);
 
                 int pixelCount = Width * Height;
-                Pixels = new byte[pixelCount * 4]; // Always use 32bpp
+                Pixels = new byte[pixelCount * 4];
 
                 Iptr = bitmapData.Scan0;
                 System.Runtime.InteropServices.Marshal.Copy(Iptr, Pixels, 0, Pixels.Length);

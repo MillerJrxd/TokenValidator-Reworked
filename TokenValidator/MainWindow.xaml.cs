@@ -300,7 +300,11 @@ namespace TokenValidator
 
             try
             {
-                var result = await Task.Run(() => ValidateToken(token));
+                string cleanedToken = token.Trim()
+                        .Replace("\r\n", "\n")
+                        .Replace("\r", "\n");
+
+                var result = await Task.Run(() => ValidateToken(cleanedToken));
 
                 ProcessValidationResult(result);
             }
@@ -315,10 +319,12 @@ namespace TokenValidator
         {
             try
             {
-                string postData = $"auth={WebUtility.UrlEncode(auth)}";
+                string encodedAuth = WebUtility.UrlEncode(auth);
+                string postData = $"auth={encodedAuth}";
+
                 if (_authenticated)
                 {
-                    postData += $"&token={_apiToken}";
+                    postData += $"&token={WebUtility.UrlEncode(_apiToken)}";
                 }
 
                 using (var client = new System.Net.Http.HttpClient())
