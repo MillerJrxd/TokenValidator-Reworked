@@ -61,7 +61,7 @@ namespace TokenValidator
         }
         #endregion
 
-        private const string MsgHeader = "SCP:SL Token Validator v1.5.0";
+        private const string MsgHeader = "SCP:SL Token Validator v1.6.0";
         private static string _apiToken;
         private static bool _authenticated;
         private readonly CancellationTokenSource _scanCancellationTokenSource = new CancellationTokenSource();
@@ -75,6 +75,8 @@ namespace TokenValidator
 
             CreateLogFolder();
             Logging.ClearLogs();
+            UpdateHotkeyTooltip();
+            ThemeManager.Initialize(this);
 
             string appFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "/SCP Secret Laboratory/");
 
@@ -114,7 +116,7 @@ namespace TokenValidator
                 _source = HwndSource.FromHwnd(wndHelper.Handle);
                 _source.AddHook(HwndHook);
 
-                RegisterHotKey(wndHelper.Handle, HOTKEY_ID, (int)KeyModifier.Alt, 0x7B);
+                RegisterHotkeyFromSettings(wndHelper.Handle);
             };
 
             if (_authenticated == false)
@@ -122,6 +124,65 @@ namespace TokenValidator
                 scanQRButton.IsEnabled = false;
                 fromClipboardButton.IsEnabled = false;
                 copyUserIDButton.IsEnabled = false;
+            }
+        }
+
+        private void RegisterHotkeyFromSettings(IntPtr hWnd)
+        {
+            int modifier = (int)KeyModifier.Alt;
+            int key = 0x7B; 
+
+            string hotkey = Properties.Settings.Default.QrScanHotkey;
+            if (!string.IsNullOrEmpty(hotkey))
+            {
+                try
+                {
+                    modifier = 0;
+
+                    var parts = hotkey.Split(new[] { " + " }, StringSplitOptions.RemoveEmptyEntries);
+
+                    for (int i = 0; i < parts.Length - 1; i++)
+                    {
+                        switch (parts[i].ToUpper())
+                        {
+                            case "ALT":
+                                modifier |= (int)KeyModifier.Alt;
+                                break;
+                            case "CTRL":
+                                modifier |= (int)KeyModifier.Control;
+                                break;
+                            case "SHIFT":
+                                modifier |= (int)KeyModifier.Shift;
+                                break;
+                            case "WIN":
+                                modifier |= (int)KeyModifier.WinKey;
+                                break;
+                        }
+                    }
+
+                    string keyPart = parts.Last();
+                    if (keyPart.StartsWith("F") && int.TryParse(keyPart.Substring(1), out int fKey) && fKey >= 1 && fKey <= 24)
+                    {
+                        key = 0x70 + (fKey - 1);
+                    }
+                    else
+                    {
+                        key = (int)Enum.Parse(typeof(System.Windows.Forms.Keys), keyPart, true);
+                    }
+                }
+                catch
+                {
+                    modifier = (int)KeyModifier.Alt;
+                    key = 0x7B;
+                }
+            }
+
+            UnregisterHotKey(hWnd, HOTKEY_ID);
+
+            if (!RegisterHotKey(hWnd, HOTKEY_ID, modifier, key))
+            {
+                MessageBox.Show($"Failed to register hotkey: {hotkey ?? "ALT + F12"}. It might be in use by another application.",
+                              MsgHeader, MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -524,6 +585,64 @@ namespace TokenValidator
         private void CloseButton_Click(object sender, RoutedEventArgs e)
         {
             this.Close();
+        }
+
+        private void SettingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            Settings settingsWindow = new Settings();
+            settingsWindow.Owner = this;
+
+            string currentHotkey = Properties.Settings.Default.QrScanHotkey;
+            bool currentSeasonalSettings = Properties.Settings.Default.SeasonalEffects;
+
+            if (settingsWindow.ShowDialog() == true)
+            {
+                if (Properties.Settings.Default.QrScanHotkey != currentHotkey)
+                {
+                    var wndHelper = new WindowInteropHelper(this);
+                    RegisterHotkeyFromSettings(wndHelper.Handle);
+                    UpdateHotkeyTooltip();
+                }
+                else if (Properties.Settings.Default.SeasonalEffects != currentSeasonalSettings)
+                {
+                    ThemeManager.UpdateSeasonalEffects();
+                }
+            }
+        }
+
+        private void UpdateHotkeyTooltip()
+        {
+            string hotkey = Properties.Settings.Default.QrScanHotkey;
+            if (string.IsNullOrEmpty(hotkey))
+            {
+                hotkey = "ALT + F12";
+            }
+            hotkey.ToUpper();
+            scanQrTooltip.Content = $"Press {hotkey} to scan QR from screen around the mouse pointer.";
+        }
+
+        protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
+        {
+            base.OnRenderSizeChanged(sizeInfo);
+
+            if (ThemeManager.SeasonalEffectsEnabled &&
+                (sizeInfo.NewSize.Width > sizeInfo.PreviousSize.Width ||
+                 sizeInfo.NewSize.Height > sizeInfo.PreviousSize.Height))
+            {
+                ThemeManager.ApplySeasonalTheme(this);
+            }
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            ThemeManager.ClearSeasonalEffects();
+            base.OnClosed(e);
+        }
+
+        protected override void OnContentRendered(EventArgs e)
+        {
+            base.OnContentRendered(e);
+            ThemeManager.Initialize(this);
         }
     }
 }

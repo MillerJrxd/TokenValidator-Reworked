@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:TokenValidator"
         mc:Ignorable="d"
-        Title="SCP:SL Token Validator v1.4.0" 
+        Title="SCP:SL Token Validator v1.6.0" 
         Height="500" Width="850"
         MinHeight="500" MinWidth="650"
         MaxHeight="650" MaxWidth="850"
@@ -47,6 +47,7 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        
         <Style x:Key="CloseButtonStyle" TargetType="Button" BasedOn="{StaticResource TitleBarButtonStyle}">
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
@@ -58,6 +59,17 @@
                     <Setter Property="Foreground" Value="White"/>
                 </Trigger>
             </Style.Triggers>
+        </Style>
+
+        <Style x:Key="SettingsButtonStyle" TargetType="Button" BasedOn="{StaticResource TitleBarButtonStyle}">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#AAAAAA"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Width" Value="40"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+            <Setter Property="Cursor" Value="Hand"/>
         </Style>
     </Window.Resources>
 
@@ -75,7 +87,7 @@
             <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="12,0,0,0">
                 <Image Source="pack://application:,,,/TokenValidator;component/Resources/icon.ico" 
                        Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                <TextBlock Text="SCP:SL Token Validator v1.5.0" FontWeight="SemiBold" FontSize="14" 
+                <TextBlock Text="SCP:SL Token Validator v1.6.0" FontWeight="SemiBold" FontSize="14" 
                            Foreground="#DDDDDD" VerticalAlignment="Center">
                     <TextBlock.Effect>
                         <DropShadowEffect ShadowDepth="1" Direction="330" Color="Black" Opacity="0.6" BlurRadius="2"/>
@@ -89,6 +101,9 @@
             <!-- Window Controls -->
             <Button x:Name="MinimizeButton" Grid.Column="2" Style="{StaticResource TitleBarButtonStyle}" Content="&#xE949;" Click="MinimizeButton_Click" ToolTip="Minimize"/>
             <Button x:Name="CloseButton" Grid.Column="3" Style="{StaticResource CloseButtonStyle}" Content="&#xE8BB;" Click="CloseButton_Click" ToolTip="Close"/>
+            <Button x:Name="SettingsButton" Grid.Column="1" Style="{StaticResource SettingsButtonStyle}" ToolTip="Settings" Margin="493,4,0,4" Click="SettingsButton_Click">
+                <Image Source="pack://application:,,,/TokenValidator;component/Resources/gear.ico" Width="30" Height="26"/>
+            </Button>
         </Grid>
 
         <!-- Main Content -->
@@ -156,7 +171,11 @@
             <!-- Buttons -->
             <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,15,0,0">
                 <Button x:Name="scanQRButton" Content="Scan QR Code" Padding="20,8" Margin="0,0,12,0" 
-                        Click="ScanQR_Click" FontSize="18" ToolTip="Press ALT + F12 to scan QR from screen around the mouse pointer."/>
+                        Click="ScanQR_Click" FontSize="18">
+                    <Button.ToolTip>
+                        <ToolTip x:Name="scanQrTooltip" Content="Press {Hotkey} to scan QR from screen around the mouse pointer."/>
+                    </Button.ToolTip>
+                </Button>
                 <Button x:Name="fromClipboardButton" Content="From Clipboard" Padding="20,8" Margin="12,0,0,0" 
                         Click="FromClipboard_Click" FontSize="18"/>
             </StackPanel>
