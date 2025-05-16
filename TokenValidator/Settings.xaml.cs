@@ -18,14 +18,35 @@ namespace TokenValidator
         public Settings()
         {
             InitializeComponent();
-            LoadSettings();
-            _initialSeasonalEffectsState = Properties.Settings.Default.SeasonalEffects;
-            _initialHotkey = Properties.Settings.Default.QrScanHotkey;
+
+            try
+            {
+                Properties.Settings.Default.Reload();
+
+                _initialSeasonalEffectsState = Properties.Settings.Default.SeasonalEffects;
+                _initialHotkey = Properties.Settings.Default.QrScanHotkey;
+
+                LoadSettings();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error loading settings: {ex.Message}", "Error",
+                              MessageBoxButton.OK, MessageBoxImage.Error);
+                _initialSeasonalEffectsState = false;
+                _initialHotkey = "ALT + F12";
+                LoadFallbackSettings();
+            }
+        }
+
+        private void LoadFallbackSettings()
+        {
+            hotkeyTextBox.Text = _initialHotkey;
+            seasonalEffectsCheckBox.IsChecked = _initialSeasonalEffectsState;
         }
 
         private void LoadSettings()
         {
-            hotkeyTextBox.Text = Properties.Settings.Default.QrScanHotkey ?? "ALT + F12";
+            Properties.Settings.Default.Reload();
             hotkeyTextBox.Text = string.IsNullOrEmpty(Properties.Settings.Default.QrScanHotkey) == true ? "ALT + F12" : Properties.Settings.Default.QrScanHotkey;
         }
 
@@ -105,21 +126,32 @@ namespace TokenValidator
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
-            bool seasonalEffectsChanged = Properties.Settings.Default.SeasonalEffects != seasonalEffectsCheckBox.IsChecked;
-
-            Properties.Settings.Default.QrScanHotkey = hotkeyTextBox.Text;
-            Properties.Settings.Default.SeasonalEffects = seasonalEffectsCheckBox.IsChecked ?? false;
-            Properties.Settings.Default.Save();
-
-            MessageBox.Show("Settings saved successfully.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
-
-            if (seasonalEffectsChanged)
+            try
             {
-                ThemeManager.UpdateSeasonalEffects();
-            }
+                bool seasonalEffectsChanged = Properties.Settings.Default.SeasonalEffects != seasonalEffectsCheckBox.IsChecked;
 
-            DialogResult = true;
-            Close();
+                if (seasonalEffectsChanged)
+                {
+                    ThemeManager.UpdateSeasonalEffects();
+                }
+
+                Properties.Settings.Default.QrScanHotkey = hotkeyTextBox.Text;
+                Properties.Settings.Default.SeasonalEffects = seasonalEffectsCheckBox.IsChecked ?? false;
+                Properties.Settings.Default.Save();
+
+                MessageBox.Show("Settings saved successfully.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+
+                DialogResult = true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error saving settings: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                DialogResult = false;
+            }
+            finally
+            {
+                Close();
+            }
         }
 
         private void CancelButton_Click(object sender, RoutedEventArgs e)

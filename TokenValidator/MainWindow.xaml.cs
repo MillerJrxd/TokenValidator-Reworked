@@ -76,7 +76,6 @@ namespace TokenValidator
             CreateLogFolder();
             Logging.ClearLogs();
             UpdateHotkeyTooltip();
-            ThemeManager.Initialize(this);
 
             string appFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "/SCP Secret Laboratory/");
 
@@ -117,6 +116,7 @@ namespace TokenValidator
                 _source.AddHook(HwndHook);
 
                 RegisterHotkeyFromSettings(wndHelper.Handle);
+                ThemeManager.Initialize(this);
             };
 
             if (_authenticated == false)

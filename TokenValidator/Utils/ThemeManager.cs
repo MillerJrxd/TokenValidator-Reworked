@@ -15,7 +15,7 @@ namespace TokenValidator.Utils
     public static class ThemeManager
     {
         #region Variables
-        private static bool _seasonalEffectsEnabled = true;
+        private static bool _seasonalEffectsEnabled = false;
         private static Canvas _snowCanvas;
         private static Canvas _lightsCanvas;
         private static DispatcherTimer _snowMonitorTimer;
@@ -48,7 +48,16 @@ namespace TokenValidator.Utils
         public static void Initialize(Window mainWindow)
         {
             _mainWindow = mainWindow;
-            SeasonalEffectsEnabled = Properties.Settings.Default.SeasonalEffects;
+
+            try
+            {
+                SeasonalEffectsEnabled = Properties.Settings.Default?.SeasonalEffects ?? false;
+            }
+            catch 
+            {
+                SeasonalEffectsEnabled = false;
+            }
+            SeasonalEffectsEnabled = _seasonalEffectsEnabled;
             UpdateSeasonalEffects();
         }
 

@@ -25,7 +25,7 @@ namespace TokenValidator.Properties {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        [global::System.Configuration.DefaultSettingValueAttribute("ALT + F12")]
         public string QrScanHotkey {
             get {
                 return ((string)(this["QrScanHotkey"]));
@@ -37,6 +37,7 @@ namespace TokenValidator.Properties {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
         public bool SeasonalEffects {
             get {
                 return ((bool)(this["SeasonalEffects"]));
