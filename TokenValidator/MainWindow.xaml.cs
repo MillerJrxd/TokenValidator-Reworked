@@ -11,6 +11,7 @@ using ZXing.Common;
 using MessageBox = System.Windows.MessageBox;
 using Clipboard = System.Windows.Clipboard;
 using TokenValidator.Utils;
+using MaterialDesignThemes.Wpf;
 
 namespace TokenValidator
 {
@@ -61,7 +62,7 @@ namespace TokenValidator
         }
         #endregion
 
-        private const string MsgHeader = "SCP:SL Token Validator v1.6.0";
+        private const string MsgHeader = "SCP:SL Token Validator v1.7.0";
         private static string _apiToken;
         private static bool _authenticated;
         private readonly CancellationTokenSource _scanCancellationTokenSource = new CancellationTokenSource();
@@ -98,6 +99,7 @@ namespace TokenValidator
                     authedLabel.Text = "Not authenticated using staff API token.";
                     authedLabel.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
                     statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
+                    statusIcon.Kind = PackIconKind.AlertCircle;
                 }
 
             }
@@ -107,6 +109,7 @@ namespace TokenValidator
                 authedLabel.Text = "Not authenticated using staff API token.";
                 authedLabel.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
                 statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
+                statusIcon.Kind = PackIconKind.AlertCircle;
             }
 
             Loaded += (s, e) =>
@@ -246,6 +249,7 @@ namespace TokenValidator
                             statusLabel.Text = "QR code not found.";
                             statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
                             MessageBox.Show("QR code not found.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
+                            statusIcon.Kind = PackIconKind.AlertCircle;
                         }
                     }
                     else
@@ -255,6 +259,7 @@ namespace TokenValidator
                         statusLabel.Text = "Scan timed out.";
                         statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
                         MessageBox.Show("QR code scan timed out. Please try again.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
+                        statusIcon.Kind = PackIconKind.AlertCircle;
                     }
                 }
                 catch (Exception ex)
@@ -263,6 +268,7 @@ namespace TokenValidator
                     statusLabel.Text = "Scan error: " + ex.Message;
                     statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
                     MessageBox.Show($"Error scanning QR code: {ex.Message}", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
+                    statusIcon.Kind = PackIconKind.AlertCircle;
                 }
             }
 
@@ -332,6 +338,7 @@ namespace TokenValidator
                     if (result == null)
                     {
                         MessageBox.Show("QR code not found.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
+                        statusIcon.Kind = PackIconKind.AlertCircle;
                         return;
                     }
                     else
@@ -373,6 +380,7 @@ namespace TokenValidator
             {
                 statusLabel.Text = $"Token validation failed: {ex.Message}";
                 statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(169, 169, 169));
+                statusIcon.Kind = PackIconKind.AlertCircle;
             }
         }
 
@@ -419,6 +427,7 @@ namespace TokenValidator
             {
                 statusLabel.Text = "Error: " + decoded["error"];
                 statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
+                statusIcon.Kind = PackIconKind.AlertCircle;
                 return;
             }
 
@@ -426,6 +435,7 @@ namespace TokenValidator
             {
                 statusLabel.Text = "Digital signature invalid";
                 statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
+                statusIcon.Kind = PackIconKind.AlertCircle;
                 return;
             }
 
@@ -451,11 +461,13 @@ namespace TokenValidator
                 {
                     statusLabel.Text = "Signature verification successful, token is old.";
                     statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(102, 205, 170));
+                    statusIcon.Kind = PackIconKind.CheckCircle;
                 }
                 else
                 {
                     statusLabel.Text = "Signature verification successful";
                     statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 191, 255));
+                    statusIcon.Kind = PackIconKind.CheckCircle;
                 }
                 return;
             }
@@ -469,11 +481,13 @@ namespace TokenValidator
                 {
                     statusLabel.Text = "Signature verification successful, token is old.";
                     statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(102, 205, 170));
+                    statusIcon.Kind = PackIconKind.CheckCircle;
                 }
                 else
                 {
                     statusLabel.Text = "Signature verification successful, not banned in any game.";
                     statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 128, 128));
+                    statusIcon.Kind = PackIconKind.CheckCircle;
                 }
             }
             else
@@ -484,11 +498,13 @@ namespace TokenValidator
                     {
                         statusLabel.Text = "Signature verification successful, banned in SCP:SL, token is old.";
                         statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 69, 0));
+                        statusIcon.Kind = PackIconKind.Alert;
                     }
                     else
                     {
                         statusLabel.Text = "Signature verification successful, banned in SCP:SL.";
                         statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 69, 0));
+                        statusIcon.Kind = PackIconKind.Alert;
                     }
                 }
                 else
@@ -497,11 +513,13 @@ namespace TokenValidator
                     {
                         statusLabel.Text = "Signature verification successful, banned in other games, token is old.";
                         statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 140, 0));
+                        statusIcon.Kind = PackIconKind.Alert;
                     }
                     else
                     {
                         statusLabel.Text = "Signature verification successful, banned in other games.";
                         statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 165, 0));
+                        statusIcon.Kind = PackIconKind.Alert;
                     }
                 }
             }
