@@ -12,6 +12,9 @@ using MessageBox = System.Windows.MessageBox;
 using Clipboard = System.Windows.Clipboard;
 using TokenValidator.Utils;
 using MaterialDesignThemes.Wpf;
+using System.Runtime.CompilerServices;
+using System.Windows.Threading;
+using System.Text.RegularExpressions;
 
 namespace TokenValidator
 {
@@ -62,13 +65,15 @@ namespace TokenValidator
         }
         #endregion
 
+        private readonly string appFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "/SCP Secret Laboratory/");
         private const string MsgHeader = "SCP:SL Token Validator v1.7.0";
-        private static string _apiToken;
+        private static string? _apiToken;
         private static bool _authenticated;
-        private readonly CancellationTokenSource _scanCancellationTokenSource = new CancellationTokenSource();
-        private readonly Scan _qrScanner = new Scan();
+        private readonly CancellationTokenSource _scanCancellationTokenSource = new();
+        private readonly Scan _qrScanner = new();
         private bool _isScanning = false;
-        private System.Threading.Timer _scanTimeoutTimer;
+        private static readonly SolidColorBrush ErrorBrush = new(System.Windows.Media.Color.FromRgb(220, 20, 60));
+        private static readonly SolidColorBrush SuccessBrush = new(System.Windows.Media.Color.FromRgb(0, 191, 255));
 
         public MainWindow()
         {
@@ -78,18 +83,16 @@ namespace TokenValidator
             Logging.ClearLogs();
             UpdateHotkeyTooltip();
 
-            string appFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "/SCP Secret Laboratory/");
-
             string apiTokenPath = Path.Combine(appFolder, "StaffAPI.txt");
             if (File.Exists(apiTokenPath))
             {
                 try
                 {
-                    _apiToken = File.ReadAllLines(apiTokenPath)[0];
+                    _apiToken = File.ReadAllLines(apiTokenPath, Encoding.UTF8)[0];
                     _authenticated = true;
                     authedLabel.Text = "Authenticated using staff API token.";
-                    authedLabel.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 191, 255));
-                    statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 191, 255));
+                    authedLabel.Foreground = SuccessBrush;
+                    statusPanel.Background = SuccessBrush;
                     statusLabel.Text = "Ready";
                 }
                 catch (Exception ex)
@@ -97,8 +100,8 @@ namespace TokenValidator
                     MessageBox.Show($"Error reading StaffAPI.txt: {ex.Message}\nFile is empty or the first line does not contain your token.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
                     _authenticated = false;
                     authedLabel.Text = "Not authenticated using staff API token.";
-                    authedLabel.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
-                    statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
+                    authedLabel.Foreground = ErrorBrush;
+                    statusPanel.Background = ErrorBrush;
                     statusIcon.Kind = PackIconKind.AlertCircle;
                 }
 
@@ -107,8 +110,8 @@ namespace TokenValidator
             {
                 _authenticated = false;
                 authedLabel.Text = "Not authenticated using staff API token.";
-                authedLabel.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
-                statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
+                authedLabel.Foreground = ErrorBrush;
+                statusPanel.Background = ErrorBrush;
                 statusIcon.Kind = PackIconKind.AlertCircle;
             }
 
@@ -130,7 +133,7 @@ namespace TokenValidator
             }
         }
 
-        private void RegisterHotkeyFromSettings(IntPtr hWnd)
+        private static void RegisterHotkeyFromSettings(IntPtr hWnd)
         {
             int modifier = (int)KeyModifier.Alt;
             int key = 0x7B; 
@@ -164,13 +167,13 @@ namespace TokenValidator
                     }
 
                     string keyPart = parts.Last();
-                    if (keyPart.StartsWith("F") && int.TryParse(keyPart.Substring(1), out int fKey) && fKey >= 1 && fKey <= 24)
+                    if (keyPart.StartsWith('F') && int.TryParse(keyPart.Substring(1), out int fKey) && fKey >= 1 && fKey <= 24)
                     {
                         key = 0x70 + (fKey - 1);
                     }
                     else
                     {
-                        key = (int)Enum.Parse(typeof(System.Windows.Forms.Keys), keyPart, true);
+                        key = (int)Enum.Parse<Keys>(keyPart, true);
                     }
                 }
                 catch
@@ -247,7 +250,7 @@ namespace TokenValidator
                         else
                         {
                             statusLabel.Text = "QR code not found.";
-                            statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
+                            statusPanel.Background = ErrorBrush;
                             MessageBox.Show("QR code not found.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
                             statusIcon.Kind = PackIconKind.AlertCircle;
                         }
@@ -255,9 +258,8 @@ namespace TokenValidator
                     else
                     {
                         _qrScanner.CancelScan();
-
                         statusLabel.Text = "Scan timed out.";
-                        statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
+                        statusPanel.Background = ErrorBrush;
                         MessageBox.Show("QR code scan timed out. Please try again.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
                         statusIcon.Kind = PackIconKind.AlertCircle;
                     }
@@ -266,7 +268,7 @@ namespace TokenValidator
                 {
                     Visibility = Visibility.Visible;
                     statusLabel.Text = "Scan error: " + ex.Message;
-                    statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
+                    statusPanel.Background = ErrorBrush;
                     MessageBox.Show($"Error scanning QR code: {ex.Message}", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
                     statusIcon.Kind = PackIconKind.AlertCircle;
                 }
@@ -321,7 +323,7 @@ namespace TokenValidator
 
                     var bitmap = new Bitmap(screenshot);
 
-                    BarcodeReaderGeneric barcodeReader = new BarcodeReaderGeneric
+                    BarcodeReaderGeneric barcodeReader = new()
                     {
                         AutoRotate = true,
                         Options = new DecodingOptions
@@ -396,28 +398,20 @@ namespace TokenValidator
                     postData += $"&token={WebUtility.UrlEncode(_apiToken)}";
                 }
 
-                using (var client = new System.Net.Http.HttpClient())
+                using (var client = new HttpQuery())
                 {
-                    client.DefaultRequestHeaders.Add("User-Agent", "SCP SL Token Validation Tool");
+                    var result = client.PostAsync("https://api.scpslgame.com/v5/tools/validatetoken.php", postData).Result;
 
-                    var content = new System.Net.Http.StringContent(
-                        postData,
-                        Encoding.UTF8,
-                        "application/x-www-form-urlencoded");
-
-                    var response = client.PostAsync("https://api.scpslgame.com/v5/tools/validatetoken.php", content).Result;
-                    string responseJson = response.Content.ReadAsStringAsync().Result;
-
-                    return JsonConvert.DeserializeObject<Dictionary<string, string>>(responseJson);
+                    return JsonConvert.DeserializeObject<Dictionary<string, string>>(result);
                 }
             }
             catch (Exception ex)
             {
                 return new Dictionary<string, string>
-                {
-                    { "success", "false" },
-                    { "error", ex.Message }
-                };
+               {
+                   { "success", "false" },
+                   { "error", ex.Message }
+               };
             }
         }
 
@@ -426,7 +420,7 @@ namespace TokenValidator
             if (decoded["success"] == "false")
             {
                 statusLabel.Text = "Error: " + decoded["error"];
-                statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
+                statusPanel.Background = ErrorBrush;
                 statusIcon.Kind = PackIconKind.AlertCircle;
                 return;
             }
@@ -434,7 +428,7 @@ namespace TokenValidator
             if (decoded["verified"] == "false")
             {
                 statusLabel.Text = "Digital signature invalid";
-                statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 20, 60));
+                statusPanel.Background = ErrorBrush;
                 statusIcon.Kind = PackIconKind.AlertCircle;
                 return;
             }
@@ -466,7 +460,7 @@ namespace TokenValidator
                 else
                 {
                     statusLabel.Text = "Signature verification successful";
-                    statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 191, 255));
+                    statusPanel.Background = SuccessBrush;
                     statusIcon.Kind = PackIconKind.CheckCircle;
                 }
                 return;
@@ -525,6 +519,11 @@ namespace TokenValidator
             }
         }
 
+        private bool IsSimpleSteamId(string token)
+        {
+            return Regex.IsMatch(token, @"^\d+@steam$");
+        }
+
         private void ClearResults()
         {
             userIDLabel.Text = "";
@@ -564,13 +563,11 @@ namespace TokenValidator
             }
 
             _scanCancellationTokenSource?.Cancel();
-            _scanTimeoutTimer?.Dispose();
             _qrScanner.CancelScan();
 
             Task.Delay(100).Wait();
 
             _scanCancellationTokenSource?.Dispose();
-            _scanTimeoutTimer = null;
 
             GC.Collect();
             GC.WaitForPendingFinalizers();
@@ -607,8 +604,10 @@ namespace TokenValidator
 
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
-            Settings settingsWindow = new Settings();
-            settingsWindow.Owner = this;
+            Settings settingsWindow = new()
+            {
+                Owner = this
+            };
 
             string currentHotkey = Properties.Settings.Default.QrScanHotkey;
             bool currentSeasonalSettings = Properties.Settings.Default.SeasonalEffects;
@@ -635,8 +634,7 @@ namespace TokenValidator
             {
                 hotkey = "ALT + F12";
             }
-            hotkey.ToUpper();
-            scanQrTooltip.Content = $"Press {hotkey} to scan QR from screen around the mouse pointer.";
+            scanQrTooltip.Content = $"Press {hotkey.ToUpper()} to scan QR from screen around the mouse pointer.";
         }
 
         protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)

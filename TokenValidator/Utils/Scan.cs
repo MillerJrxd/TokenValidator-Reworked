@@ -68,8 +68,7 @@ namespace TokenValidator.Utils
 
         private void CleanupResources()
         {
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
+            _scanCancellationTokenSource.Dispose();
         }
 
         private void ResetCancellationToken()
@@ -96,7 +95,7 @@ namespace TokenValidator.Utils
             }
         }
 
-        private async Task<string> ScanAllScreensForQrCodeAsync(System.Windows.Forms.Screen[] screens, CancellationToken cancellationToken)
+        private static async Task<string> ScanAllScreensForQrCodeAsync(System.Windows.Forms.Screen[] screens, CancellationToken cancellationToken)
         {
             var resultFound = new ConcurrentQueue<string>();
             var tcs = new TaskCompletionSource<string>();
@@ -134,7 +133,7 @@ namespace TokenValidator.Utils
                             }
                             catch (OperationCanceledException)
                             {
-                                
+
                             }
                             catch (Exception ex)
                             {
@@ -155,7 +154,7 @@ namespace TokenValidator.Utils
                     }
                     catch
                     {
-                        
+
                     }
 
                     if (resultFound.TryDequeue(out string qrResult))
@@ -177,7 +176,7 @@ namespace TokenValidator.Utils
             }
         }
 
-        private async Task<string> ScanScreenForQrCodeAsync(System.Windows.Forms.Screen screen, CancellationToken cancellationToken)
+        private static async Task<string> ScanScreenForQrCodeAsync(System.Windows.Forms.Screen screen, CancellationToken cancellationToken)
         {
             if (cancellationToken.IsCancellationRequested)
                 return null;
@@ -185,21 +184,15 @@ namespace TokenValidator.Utils
             try
             {
                 using (var screenshot = new Bitmap(screen.Bounds.Width, screen.Bounds.Height))
+                using (var graphics = Graphics.FromImage(screenshot))
                 {
-                    using (var graphics = Graphics.FromImage(screenshot))
-                    {
-                        graphics.CopyFromScreen(screen.Bounds.Left, screen.Bounds.Top, 0, 0, screenshot.Size);
-                    }
-
-                    cancellationToken.ThrowIfCancellationRequested();
+                    graphics.CopyFromScreen(screen.Bounds.Left, screen.Bounds.Top, 0, 0, screenshot.Size);
 
                     var result = ScanBitmapForQrCode(screenshot);
-                    if (result != null)
-                        return result;
-
+                    if (result != null) return result;
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    int gridSize = 2;
+                    int gridSize = (screenshot.Width > 1920 || screenshot.Height > 1080) ? 3 : 2;
                     int sectionWidth = screenshot.Width / gridSize;
                     int sectionHeight = screenshot.Height / gridSize;
                     int overlap = 100;
@@ -221,104 +214,45 @@ namespace TokenValidator.Utils
                         }
                     }
 
-                    var sectionTasks = new List<Task<string>>();
-                    foreach (var section in sections)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
+                    var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    var options = new ParallelOptions { CancellationToken = cts.Token, MaxDegreeOfParallelism = Environment.ProcessorCount };
 
-                        sectionTasks.Add(Task.Run(() =>
+                    string finalResult = null;
+
+                    try
+                    {
+                        Parallel.ForEach(sections, options, (section, state) =>
                         {
                             using (var sectionBitmap = screenshot.Clone(
                                 new Rectangle(section.x, section.y, section.width, section.height),
                                 screenshot.PixelFormat))
                             {
-                                return TryEnhancedScanning(sectionBitmap, cancellationToken);
+                                var localResult = TryEnhancedScanning(sectionBitmap, cts.Token);
+                                if (localResult != null)
+                                {
+                                    finalResult = localResult;
+                                    cts.Cancel();
+                                    state.Stop();
+                                }
                             }
-                        }, cancellationToken));
+                        });
                     }
-
-                    var completedTask = await Task.WhenAny(sectionTasks);
-                    if (completedTask.IsCompletedSuccessfully && completedTask.Result != null)
+                    catch (OperationCanceledException)
                     {
-                        return completedTask.Result;
                     }
+                    return finalResult;
                 }
             }
             catch (OperationCanceledException)
             {
-                
             }
             catch (Exception ex)
             {
                 Logging.LogException(ex);
-                if (!cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
+                if (!cancellationToken.IsCancellationRequested) throw;
+                return null;
             }
             return null;
-        }
-
-        //Unused
-        public async Task<string> ScanAtCursorAsync(System.Drawing.Point cursorPosition, int scanSize = 900)
-        {
-            ResetCancellationToken();
-
-            const int TIMEOUTMS = 8000;
-
-            try
-            {
-                using (var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(_scanCancellationTokenSource.Token))
-                {
-                    timeoutCts.CancelAfter(TIMEOUTMS);
-
-                    try
-                    {
-                        int left = cursorPosition.X - scanSize / 2;
-                        int top = cursorPosition.Y - scanSize / 2;
-                        if (left < 0) left = 0;
-                        if (top < 0) top = 0;
-
-                        using (var screenshot = new Bitmap(scanSize, scanSize))
-                        {
-                            using (var graphics = Graphics.FromImage(screenshot))
-                            {
-                                graphics.CopyFromScreen(left, top, 0, 0, screenshot.Size);
-                            }
-
-                            if (timeoutCts.Token.IsCancellationRequested)
-                                return null;
-
-                            var result = ScanBitmapForQrCode(screenshot);
-                            if (result != null)
-                                return result;
-
-                            if (timeoutCts.Token.IsCancellationRequested)
-                                return null;
-
-                            return null;
-                        }
-                    }
-                    catch (OperationCanceledException ex)
-                    {
-                        Logging.LogException(ex);
-                        return null;
-                    }
-                    catch (Exception ex)
-                    {
-                        Logging.LogException(ex);
-                        if (!timeoutCts.Token.IsCancellationRequested)
-                        {
-                            throw;
-                        }
-                        return null;
-                    }
-                }
-            }
-            finally
-            {
-                CleanupResources();
-            }
         }
 
         private static string ScanBitmapForQrCode(Bitmap bitmap)
@@ -335,20 +269,19 @@ namespace TokenValidator.Utils
             if (result != null) return result;
             if (cancellationToken.IsCancellationRequested) return null;
 
-            foreach (int processingLevel in new[] { 1, 0 })
-            {
-                if (cancellationToken.IsCancellationRequested) return null;
+            var processingLevels = new[] { 1, 0 };
+            var scalingFactors = new[] { 1.25, 1.5 };
 
-                using (var processed = EnhanceImage(originalBitmap, processingLevel))
+            foreach (int level in processingLevels)
+            {
+                using (var processed = EnhanceImage(originalBitmap, level))
                 {
                     result = ScanBitmapForQrCode(processed);
                     if (result != null) return result;
                     if (cancellationToken.IsCancellationRequested) return null;
 
-                    foreach (var scale in processingLevel < 1 ? new[] { 0.75, 1.25, 1.5 } : new[] { 1.25 })
+                    foreach (double scale in scalingFactors)
                     {
-                        if (cancellationToken.IsCancellationRequested) return null;
-
                         using (var scaled = ScaleBitmap(processed, scale))
                         {
                             result = ScanBitmapForQrCode(scaled);
@@ -365,7 +298,6 @@ namespace TokenValidator.Utils
                 {
                     result = ScanBitmapForQrCode(thresholded);
                     if (result != null) return result;
-                    if (cancellationToken.IsCancellationRequested) return null;
 
                     using (var scaledThresholded = ScaleBitmap(thresholded, 1.25))
                     {
@@ -408,62 +340,18 @@ namespace TokenValidator.Utils
             ];
 
             using (var graphics = Graphics.FromImage(result))
+            using (var attributes = new ImageAttributes())
             {
-                var colorMatrix = new ColorMatrix(colorMatrixElements);
-                var attributes = new ImageAttributes();
-                attributes.SetColorMatrix(colorMatrix);
-
-                graphics.DrawImage(
-                    original,
-                    new Rectangle(0, 0, original.Width, original.Height),
-                    0, 0, original.Width, original.Height,
-                    GraphicsUnit.Pixel,
-                    attributes);
+                attributes.SetColorMatrix(new ColorMatrix(colorMatrixElements));
+                graphics.DrawImage(original, new Rectangle(0, 0, original.Width, original.Height),
+                    0, 0, original.Width, original.Height, GraphicsUnit.Pixel, attributes);
             }
-
-            if (level >= 2)
-            {
-                result = ApplySharpen(result, level - 1);
-            }
-
-            return result;
-        }
-
-        private static Bitmap ApplySharpen(Bitmap image, int strength)
-        {
-            float sharpness = 0.5f + (strength * 0.5f);
-
-            float[][] sharpenFilter = [
-                [-sharpness, -sharpness, -sharpness],
-                [-sharpness, 9 + sharpness, -sharpness],
-                [-sharpness, -sharpness, -sharpness]
-            ];
-
-            Bitmap result = new Bitmap(image.Width, image.Height);
-
-            using (Graphics g = Graphics.FromImage(result))
-            {
-                var matrix = new ColorMatrix([
-                    [1, 0, 0, 0, 0],
-                    [0, 1, 0, 0, 0],
-                    [0, 0, 1, 0, 0],
-                    [0, 0, 0, 1, 0],
-                    [0, 0, 0, 0, 1]
-                ]);
-
-                var attributes = new ImageAttributes();
-                attributes.SetColorMatrix(matrix);
-
-                g.DrawImage(image, new Rectangle(0, 0, image.Width, image.Height),
-                    0, 0, image.Width, image.Height, GraphicsUnit.Pixel, attributes);
-            }
-
             return result;
         }
 
         private static Bitmap AdaptiveThreshold(Bitmap original)
         {
-            Bitmap result = new Bitmap(original.Width, original.Height);
+            Bitmap result = new(original.Width, original.Height);
 
             using (var fastOriginal = new LockBitmap(original))
             using (var fastResult = new LockBitmap(result))

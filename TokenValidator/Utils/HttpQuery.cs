@@ -1,39 +1,35 @@
-﻿using System.Net.Http;
+﻿using Microsoft.Extensions.DependencyInjection;
+using System.Net.Http;
 using System.Text;
 
 namespace TokenValidator.Utils
 {
-    public class HttpQuery
+    public class HttpQuery : IDisposable
     {
-        private static readonly HttpClient Client;
-        private static readonly SemaphoreSlim RequestSemaphore = new(8, 8);
-        private const int DefaultTimeoutSeconds = 30;
+        private readonly HttpClient _client;
+        private readonly SemaphoreSlim _requestSemaphore = new(8, 8);
 
-        static HttpQuery()
+        public HttpQuery()
         {
-            var handler = new HttpClientHandler
-            {
-                MaxConnectionsPerServer = 20,
-                AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
-            };
+            var factory = (App.Current.Properties["ServiceProvider"] as IServiceProvider)?
+                .GetRequiredService<IHttpClientFactory>();
 
-            Client = new HttpClient(handler)
-            {
-                Timeout = TimeSpan.FromSeconds(DefaultTimeoutSeconds)
-            };
-
-            Client.DefaultRequestHeaders.Add("User-Agent", "SCP SL Token Validation Tool");
-            Client.DefaultRequestHeaders.Add("Accept", "application/json");
-            Client.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate");
-            Client.DefaultRequestHeaders.Connection.Add("keep-alive");
+            _client = factory?.CreateClient("SCPClient") ?? new HttpClient();
         }
 
-        public static string Post(string url, string postData)
+        public void Dispose()
+        {
+            _client.Dispose();
+            _requestSemaphore.Dispose();
+            GC.SuppressFinalize(this);
+        }
+
+        public string Post(string url, string postData)
         {
             return PostAsync(url, postData).GetAwaiter().GetResult();
         }
 
-        public static async Task<string> PostAsync(string url, string postData, CancellationToken cancellationToken = default)
+        public async Task<string> PostAsync(string url, string postData, CancellationToken cancellationToken = default)
         {
             var content = new StringContent(
                 postData,
@@ -42,13 +38,13 @@ namespace TokenValidator.Utils
 
             try
             {
-                await RequestSemaphore.WaitAsync(cancellationToken);
+                await _requestSemaphore.WaitAsync(cancellationToken);
 
                 using (var request = new HttpRequestMessage(HttpMethod.Post, url))
                 {
                     request.Content = content;
 
-                    using (var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
+                    using (var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
                     {
                         response.EnsureSuccessStatusCode();
                         return await response.Content.ReadAsStringAsync();
@@ -72,24 +68,24 @@ namespace TokenValidator.Utils
             }
             finally
             {
-                RequestSemaphore.Release();
+                _requestSemaphore.Release();
             }
         }
 
-        public static string Get(string url)
+        public string Get(string url)
         {
             return GetAsync(url).GetAwaiter().GetResult();
         }
 
-        public static async Task<string> GetAsync(string url, CancellationToken cancellationToken = default)
+        public async Task<string> GetAsync(string url, CancellationToken cancellationToken = default)
         {
             try
             {
-                await RequestSemaphore.WaitAsync(cancellationToken);
+                await _requestSemaphore.WaitAsync(cancellationToken);
 
                 using (var request = new HttpRequestMessage(HttpMethod.Get, url))
                 {
-                    using (var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
+                    using (var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
                     {
                         response.EnsureSuccessStatusCode();
                         return await response.Content.ReadAsStringAsync();
@@ -113,25 +109,7 @@ namespace TokenValidator.Utils
             }
             finally
             {
-                RequestSemaphore.Release();
-            }
-        }
-
-        public static void ResetClient()
-        {
-            try
-            {
-                Client.DefaultRequestHeaders.Clear();
-                Client.DefaultRequestHeaders.Add("User-Agent", "SCP SL Token Validation Tool");
-                Client.DefaultRequestHeaders.Add("Accept", "application/json");
-                Client.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate");
-                Client.DefaultRequestHeaders.Connection.Add("keep-alive");
-
-                Client.Timeout = TimeSpan.FromSeconds(DefaultTimeoutSeconds);
-            }
-            catch (Exception ex)
-            {
-                Logging.LogException(ex);
+                _requestSemaphore.Release();
             }
         }
     }

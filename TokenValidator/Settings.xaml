@@ -114,7 +114,7 @@
                             </TextBox.ToolTip>
                         </TextBox>
                         <Button x:Name="recordHotkeyButton" Grid.Row="1" Grid.Column="2" 
-                                Style="{StaticResource MaterialDesignOutlinedButton}"
+                                Style="{StaticResource MaterialDesignRaisedButton}"
                                 Click="RecordHotkeyButton_Click">
                             <StackPanel Orientation="Horizontal">
                                 <materialDesign:PackIcon Kind="Record" Width="18" Height="18" Margin="0,0,8,0"/>
@@ -151,7 +151,7 @@
                                       Padding="8"
                                       Height="35">
                                 <CheckBox.ToolTip>
-                                    <ToolTip Content="Toggles seasonal decoration effects" Style="{StaticResource MaterialDesignToolTip}"/>
+                                    <ToolTip Content="Toggles seasonal decoration effects" Foreground="Black"/>
                                 </CheckBox.ToolTip>
                             </CheckBox>
                         </Grid>

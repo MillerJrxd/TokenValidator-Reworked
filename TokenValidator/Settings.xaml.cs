@@ -11,8 +11,8 @@ namespace TokenValidator
     /// </summary>
     public partial class Settings : Window
     {
-        private bool _initialSeasonalEffectsState;
-        private string _initialHotkey;
+        private readonly bool _initialSeasonalEffectsState;
+        private readonly string _initialHotkey;
         private bool isRecordingHotkey = false;
 
         public Settings()

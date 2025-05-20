@@ -16,13 +16,13 @@ namespace TokenValidator.Utils
     {
         #region Variables
         private static bool _seasonalEffectsEnabled = false;
-        private static Canvas _snowCanvas;
-        private static Canvas _lightsCanvas;
-        private static DispatcherTimer _snowMonitorTimer;
-        private static DispatcherTimer _lightsTimer;
-        private static Window _mainWindow;
-        private static readonly List<Button> _modifiedButtons = new List<Button>();
-        private static readonly List<Ellipse> _lightBulbs = new List<Ellipse>();
+        private static Canvas? _snowCanvas;
+        private static Canvas? _lightsCanvas;
+        private static DispatcherTimer? _snowMonitorTimer;
+        private static DispatcherTimer? _lightsTimer;
+        private static Window? _mainWindow;
+        private static readonly List<Button> _modifiedButtons = new();
+        private static readonly List<Ellipse> _lightBulbs = new();
 
         public static bool SeasonalEffectsEnabled
         {
@@ -38,7 +38,10 @@ namespace TokenValidator.Utils
                 }
                 else
                 {
-                    ApplySeasonalTheme(_mainWindow);
+                    if (_mainWindow != null)
+                    {
+                        ApplySeasonalTheme(_mainWindow);
+                    }
                 }
             }
         }
@@ -48,6 +51,7 @@ namespace TokenValidator.Utils
         public static void Initialize(Window mainWindow)
         {
             _mainWindow = mainWindow;
+            _mainWindow.IsVisibleChanged += OnWindowVisibilityChanged;
 
             try
             {
@@ -61,7 +65,7 @@ namespace TokenValidator.Utils
             UpdateSeasonalEffects();
         }
 
-        public static void ApplySeasonalTheme(Window window = null)
+        public static void ApplySeasonalTheme(Window? window = null)
         {
             if (window == null) return;
 
@@ -83,7 +87,10 @@ namespace TokenValidator.Utils
         {
             if (Properties.Settings.Default.SeasonalEffects)
             {
-                ApplySeasonalTheme(_mainWindow);
+                if (_mainWindow != null)
+                {
+                    ApplySeasonalTheme(_mainWindow);
+                }
             }
             else
             {
@@ -134,27 +141,36 @@ namespace TokenValidator.Utils
             }
             _modifiedButtons.Clear();
             _lightBulbs.Clear();
+            _mainWindow.IsVisibleChanged -= OnWindowVisibilityChanged;
         }
 
-        private static IEnumerable<T> FindVisualChildren<T>(DependencyObject depObj) where T : DependencyObject
+        private static void OnWindowVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
         {
-            if (depObj != null)
+            if (_mainWindow.IsVisible)
             {
-                for (int i = 0; i < VisualTreeHelper.GetChildrenCount(depObj); i++)
-                {
-                    DependencyObject child = VisualTreeHelper.GetChild(depObj, i);
-                    if (child != null && child is T t)
-                    {
-                        yield return t;
-                    }
-
-                    foreach (T childOfChild in FindVisualChildren<T>(child))
-                    {
-                        yield return childOfChild;
-                    }
-                }
+                StartAnimations();
+            }
+            else
+            {
+                StopAnimations();
             }
         }
+
+        private static void StartAnimations()
+        {
+            if (_snowMonitorTimer != null && !_snowMonitorTimer.IsEnabled)
+                _snowMonitorTimer.Start();
+
+            if (_lightsTimer != null && !_lightsTimer.IsEnabled)
+                _lightsTimer.Start();
+        }
+
+        private static void StopAnimations()
+        {
+            _snowMonitorTimer?.Stop();
+            _lightsTimer?.Stop();
+        }
+
         #endregion
 
         #region Winter Theme
@@ -188,7 +204,7 @@ namespace TokenValidator.Utils
 
             int lightCount = 25;
             double spacing = window.ActualWidth / (lightCount + 1);
-            Random random = new Random();
+            Random random = new();
 
             for (int i = 0; i < lightCount; i++)
             {
@@ -231,7 +247,7 @@ namespace TokenValidator.Utils
             _lightsTimer.Start();
         }
 
-        private static System.Windows.Media.Brush GetRandomLightColor(Random random)
+        private static System.Windows.Media.SolidColorBrush GetRandomLightColor(Random random)
         {
             Color[] colors = {
                 Colors.Red,

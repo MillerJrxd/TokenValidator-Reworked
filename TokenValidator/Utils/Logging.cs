@@ -4,7 +4,7 @@ namespace TokenValidator.Utils
 {
     public static class Logging
     {
-        private static string LogFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TokenValidator", "Class Logs");
+        private readonly static string LogFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TokenValidator", "Class Logs");
 
         public static void LogException(Exception ex)
         {
@@ -44,18 +44,12 @@ namespace TokenValidator.Utils
             {
                 if (Directory.Exists(LogFilePath))
                 {
-                    string[] logFiles = Directory.GetFiles(LogFilePath, "log_*.txt");
-                    foreach (string logFile in logFiles)
+                    foreach (var logFile in Directory.GetFiles(LogFilePath, "log_*.txt"))
                     {
-                        string fileName = Path.GetFileNameWithoutExtension(logFile);
-                        if (fileName.StartsWith("log_") && DateTime.TryParseExact(fileName.Substring(4), "yyyyMMdd_HHmmss", null, System.Globalization.DateTimeStyles.None, out DateTime logDate))
-                        {
-                            if ((DateTime.Now - logDate).TotalDays > 14)
-                            {
-                                File.Delete(logFile);
-                            }
-                        }
-                    }
+                        var creationTime = File.GetCreationTime(logFile);
+                        if (DateTime.Now - creationTime > TimeSpan.FromDays(14))
+                            File.Delete(logFile);
+                    }   
                 }
             }
             catch (Exception ex)

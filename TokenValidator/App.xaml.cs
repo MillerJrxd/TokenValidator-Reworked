@@ -1,4 +1,5 @@
-﻿using System.Windows;
+﻿using Microsoft.Extensions.DependencyInjection;
+using System.Windows;
 
 namespace TokenValidator
 {
@@ -9,7 +10,16 @@ namespace TokenValidator
     {
         protected override void OnStartup(StartupEventArgs e)
         {
-            base.OnStartup(e);
+
+            var services = new ServiceCollection();
+            services.AddHttpClient("SCPClient", client =>
+            {
+                client.DefaultRequestHeaders.Add("User-Agent", "SCP SL Token Validation Tool");
+                client.Timeout = TimeSpan.FromSeconds(30);
+            });
+
+            var provider = services.BuildServiceProvider();
+            Current.Properties["ServiceProvider"] = provider;
 
             AppDomain.CurrentDomain.UnhandledException += (s, args) =>
                 LogUnhandledException((Exception)args.ExceptionObject, "AppDomain.CurrentDomain.UnhandledException");
@@ -19,9 +29,12 @@ namespace TokenValidator
                 LogUnhandledException(args.Exception, "Application.Current.DispatcherUnhandledException");
                 args.Handled = true;
             };
+
+            base.OnStartup(e);
+
         }
 
-        private void LogUnhandledException(Exception exception, string source)
+        private static void LogUnhandledException(Exception exception, string source)
         {
             string errorMessage = $"An unhandled exception occurred: {exception.Message}";
             System.Windows.MessageBox.Show(errorMessage, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
