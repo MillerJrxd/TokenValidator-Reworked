@@ -9,6 +9,7 @@ namespace TokenValidator.Utils
 {
     public class Scan
     {
+        #region Variables/Constructor
         private static readonly BarcodeReaderGeneric _barcodeReader = new BarcodeReaderGeneric
         {
             AutoRotate = true,
@@ -28,7 +29,9 @@ namespace TokenValidator.Utils
         {
             _scanCancellationTokenSource = new CancellationTokenSource();
         }
+        #endregion
 
+        #region Utility Methods
         public async Task<string> ScanAllScreensAsync(System.Windows.Forms.Screen[] screens)
         {
             ResetCancellationToken();
@@ -94,7 +97,9 @@ namespace TokenValidator.Utils
                 _scanCancellationTokenSource = new CancellationTokenSource();
             }
         }
+        #endregion
 
+        #region Scans
         private static async Task<string> ScanAllScreensForQrCodeAsync(System.Windows.Forms.Screen[] screens, CancellationToken cancellationToken)
         {
             var resultFound = new ConcurrentQueue<string>();
@@ -309,7 +314,9 @@ namespace TokenValidator.Utils
 
             return null;
         }
+        #endregion
 
+        #region Image manipulation methods
         private static Bitmap ScaleBitmap(Bitmap original, double scale)
         {
             int width = (int)(original.Width * scale);
@@ -395,5 +402,6 @@ namespace TokenValidator.Utils
 
             return result;
         }
+        #endregion
     }
 }

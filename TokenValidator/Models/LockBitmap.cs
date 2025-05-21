@@ -5,6 +5,7 @@ namespace TokenValidator.Models
 {
     public class LockBitmap : IDisposable
     {
+        #region Variables/Constructor
         Bitmap source = null;
         IntPtr Iptr = IntPtr.Zero;
         BitmapData bitmapData = null;
@@ -21,7 +22,9 @@ namespace TokenValidator.Models
             this.Height = source.Height;
             this.Depth = Bitmap.GetPixelFormatSize(source.PixelFormat);
         }
+        #endregion
 
+        #region Class Methods
         public void LockBits()
         {
             try
@@ -88,6 +91,7 @@ namespace TokenValidator.Models
                 bitmapData = null;
             }
         }
+        #endregion
 
         public void Dispose()
         {

@@ -6,6 +6,7 @@ namespace TokenValidator.Utils
 {
     public class HttpQuery : IDisposable
     {
+        #region Variables/Constructor/Dispose
         private readonly HttpClient _client;
         private readonly SemaphoreSlim _requestSemaphore = new(8, 8);
 
@@ -17,18 +18,16 @@ namespace TokenValidator.Utils
             _client = factory?.CreateClient("SCPClient") ?? new HttpClient();
         }
 
+
         public void Dispose()
         {
             _client.Dispose();
             _requestSemaphore.Dispose();
             GC.SuppressFinalize(this);
         }
+        #endregion
 
-        public string Post(string url, string postData)
-        {
-            return PostAsync(url, postData).GetAwaiter().GetResult();
-        }
-
+        #region HTTP Post
         public async Task<string> PostAsync(string url, string postData, CancellationToken cancellationToken = default)
         {
             var content = new StringContent(
@@ -71,12 +70,9 @@ namespace TokenValidator.Utils
                 _requestSemaphore.Release();
             }
         }
+        #endregion
 
-        public string Get(string url)
-        {
-            return GetAsync(url).GetAwaiter().GetResult();
-        }
-
+        #region HTTP Get
         public async Task<string> GetAsync(string url, CancellationToken cancellationToken = default)
         {
             try
@@ -112,5 +108,6 @@ namespace TokenValidator.Utils
                 _requestSemaphore.Release();
             }
         }
+        #endregion
     }
 }

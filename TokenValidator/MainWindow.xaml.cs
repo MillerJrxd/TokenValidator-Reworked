@@ -12,9 +12,6 @@ using MessageBox = System.Windows.MessageBox;
 using Clipboard = System.Windows.Clipboard;
 using TokenValidator.Utils;
 using MaterialDesignThemes.Wpf;
-using System.Runtime.CompilerServices;
-using System.Windows.Threading;
-using System.Text.RegularExpressions;
 
 namespace TokenValidator
 {
@@ -23,7 +20,6 @@ namespace TokenValidator
     /// </summary>
     public partial class MainWindow : Window
     {
-
         #region Hotkey and Cursor Position Detection
         //Credits to zabszk
         [DllImport("user32.dll")]
@@ -65,8 +61,9 @@ namespace TokenValidator
         }
         #endregion
 
+        #region Variables
         private readonly string appFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "/SCP Secret Laboratory/");
-        private const string MsgHeader = "SCP:SL Token Validator v1.7.0";
+        private const string MsgHeader = "SCP:SL Token Validator v2.0.0";
         private static string? _apiToken;
         private static bool _authenticated;
         private readonly CancellationTokenSource _scanCancellationTokenSource = new();
@@ -74,7 +71,9 @@ namespace TokenValidator
         private bool _isScanning = false;
         private static readonly SolidColorBrush ErrorBrush = new(System.Windows.Media.Color.FromRgb(220, 20, 60));
         private static readonly SolidColorBrush SuccessBrush = new(System.Windows.Media.Color.FromRgb(0, 191, 255));
+        #endregion
 
+        #region Constructor
         public MainWindow()
         {
             InitializeComponent();
@@ -132,7 +131,9 @@ namespace TokenValidator
                 copyUserIDButton.IsEnabled = false;
             }
         }
+        #endregion
 
+        #region Hotkey Registration
         private static void RegisterHotkeyFromSettings(IntPtr hWnd)
         {
             int modifier = (int)KeyModifier.Alt;
@@ -202,7 +203,9 @@ namespace TokenValidator
             }
             return IntPtr.Zero;
         }
+        #endregion
 
+        #region Scans
         private async void ScanQR_Click(object sender, RoutedEventArgs e)
         {
             if (_isScanning)
@@ -360,7 +363,9 @@ namespace TokenValidator
 
             _isScanning = false;
         }
+        #endregion
 
+        #region Token Validation/Processing result
         private async Task ValidateTokenAsync(string token)
         {
             ClearResults();
@@ -414,6 +419,7 @@ namespace TokenValidator
                };
             }
         }
+        
 
         private void ProcessValidationResult(Dictionary<string, string> decoded)
         {
@@ -518,12 +524,9 @@ namespace TokenValidator
                 }
             }
         }
+        #endregion
 
-        private bool IsSimpleSteamId(string token)
-        {
-            return Regex.IsMatch(token, @"^\d+@steam$");
-        }
-
+        #region UI Helpers/Helper methods
         private void ClearResults()
         {
             userIDLabel.Text = "";
@@ -660,5 +663,6 @@ namespace TokenValidator
             base.OnContentRendered(e);
             ThemeManager.Initialize(this);
         }
+        #endregion
     }
 }

@@ -11,10 +11,13 @@ namespace TokenValidator
     /// </summary>
     public partial class Settings : Window
     {
+        #region Variables
         private readonly bool _initialSeasonalEffectsState;
         private readonly string _initialHotkey;
         private bool isRecordingHotkey = false;
+        #endregion
 
+        #region Constructor
         public Settings()
         {
             InitializeComponent();
@@ -37,19 +40,9 @@ namespace TokenValidator
                 LoadFallbackSettings();
             }
         }
+        #endregion
 
-        private void LoadFallbackSettings()
-        {
-            hotkeyTextBox.Text = _initialHotkey;
-            seasonalEffectsCheckBox.IsChecked = _initialSeasonalEffectsState;
-        }
-
-        private void LoadSettings()
-        {
-            Properties.Settings.Default.Reload();
-            hotkeyTextBox.Text = string.IsNullOrEmpty(Properties.Settings.Default.QrScanHotkey) == true ? "ALT + F12" : Properties.Settings.Default.QrScanHotkey;
-        }
-
+        #region Hotkey Handling
         private void RecordHotkeyButton_Click(object sender, RoutedEventArgs e)
         {
             if (isRecordingHotkey)
@@ -123,7 +116,9 @@ namespace TokenValidator
             hotkeyTextBox.IsReadOnly = true;
             recordHotkeyButton.Content = "Record";
         }
+        #endregion
 
+        #region Click Events
         private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -162,17 +157,6 @@ namespace TokenValidator
             Close();
         }
 
-        private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            if (e.ChangedButton == MouseButton.Left)
-                DragMove();
-        }
-
-        private void MinimizeButton_Click(object sender, RoutedEventArgs e)
-        {
-            WindowState = WindowState.Minimized;
-        }
-
         private void CloseButton_Click(object sender, RoutedEventArgs e)
         {
             Properties.Settings.Default.SeasonalEffects = _initialSeasonalEffectsState;
@@ -180,9 +164,36 @@ namespace TokenValidator
             DialogResult = false;
             Close();
         }
+
+        private void MinimizeButton_Click(object sender, RoutedEventArgs e)
+        {
+            WindowState = WindowState.Minimized;
+        }
+        #endregion
+
+        #region Helper Methods
+        private void LoadFallbackSettings()
+        {
+            hotkeyTextBox.Text = _initialHotkey;
+            seasonalEffectsCheckBox.IsChecked = _initialSeasonalEffectsState;
+        }
+
+        private void LoadSettings()
+        {
+            Properties.Settings.Default.Reload();
+            hotkeyTextBox.Text = string.IsNullOrEmpty(Properties.Settings.Default.QrScanHotkey) == true ? "ALT + F12" : Properties.Settings.Default.QrScanHotkey;
+        }
+
+        private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton == MouseButton.Left)
+                DragMove();
+        }
+
         protected override void OnClosing(CancelEventArgs e)
         {
             base.OnClosing(e);
         }
+        #endregion
     }
 }
