@@ -552,7 +552,15 @@ namespace TokenValidator
         {
             if (!string.IsNullOrEmpty(userIDLabel.Text))
             {
-                Clipboard.SetText(userIDLabel.Text);
+                try
+                {
+                    Clipboard.SetText(userIDLabel.Text);
+                }
+                catch (COMException ex) when (ex.ErrorCode == unchecked((int)0x800401D0))
+                {
+
+                    throw;
+                }
             }
         }
 

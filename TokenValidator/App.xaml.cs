@@ -10,7 +10,6 @@ namespace TokenValidator
     {
         protected override void OnStartup(StartupEventArgs e)
         {
-
             var services = new ServiceCollection();
             services.AddHttpClient("SCPClient", client =>
             {
@@ -22,16 +21,28 @@ namespace TokenValidator
             Current.Properties["ServiceProvider"] = provider;
 
             AppDomain.CurrentDomain.UnhandledException += (s, args) =>
-                LogUnhandledException((Exception)args.ExceptionObject, "AppDomain.CurrentDomain.UnhandledException");
+            {
+                var ex = (Exception)args.ExceptionObject;
+                if (!IsClipboardException(ex))
+                    LogUnhandledException(ex, "AppDomain.CurrentDomain.UnhandledException");
+            };
 
             Current.DispatcherUnhandledException += (s, args) =>
             {
-                LogUnhandledException(args.Exception, "Application.Current.DispatcherUnhandledException");
+                if (!IsClipboardException(args.Exception))
+                {
+                    LogUnhandledException(args.Exception, "Application.Current.DispatcherUnhandledException");
+                }
                 args.Handled = true;
             };
 
             base.OnStartup(e);
+        }
 
+        private static bool IsClipboardException(Exception ex)
+        {
+            return ex is System.Runtime.InteropServices.COMException comEx &&
+                   comEx.ErrorCode == unchecked((int)0x800401D0);
         }
 
         private static void LogUnhandledException(Exception exception, string source)
