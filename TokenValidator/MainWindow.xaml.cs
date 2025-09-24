@@ -12,6 +12,8 @@ using MessageBox = System.Windows.MessageBox;
 using Clipboard = System.Windows.Clipboard;
 using TokenValidator.Utils;
 using MaterialDesignThemes.Wpf;
+using TokenValidator.Models;
+using System.Windows.Threading;
 
 namespace TokenValidator
 {
@@ -63,66 +65,44 @@ namespace TokenValidator
 
         #region Variables
         private readonly string appFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "/SCP Secret Laboratory/");
-        private const string MsgHeader = "SCP:SL Token Validator v2.0.0";
+        private string MsgHeader = "";
         private static string? _apiToken;
-        private static bool _authenticated;
+        private static bool _authenticated = true;
         private readonly CancellationTokenSource _scanCancellationTokenSource = new();
         private readonly Scan _qrScanner = new();
         private bool _isScanning = false;
         private static readonly SolidColorBrush ErrorBrush = new(System.Windows.Media.Color.FromRgb(220, 20, 60));
         private static readonly SolidColorBrush SuccessBrush = new(System.Windows.Media.Color.FromRgb(0, 191, 255));
+        public VersionViewModel ViewModel { get; private set; }
         #endregion
 
         #region Constructor
         public MainWindow()
         {
             InitializeComponent();
+            InitLightweightComponents();
+            Dispatcher.BeginInvoke(new Action(async () =>
+            {
+                await InitHeavyComponents();
+            }), DispatcherPriority.Background);
+        }
 
+        private async Task InitHeavyComponents()
+        {
             CreateLogFolder();
-            Logging.ClearLogs();
+            await Task.Run(() => Logging.ClearLogs());
+
+            await LoadAuthentication();
+            await InitHotkey();
+        }
+
+        private void InitLightweightComponents()
+        {
+            ViewModel = new VersionViewModel();
+            DataContext = ViewModel;
+            MsgHeader = ViewModel.VersionInfo;
+
             UpdateHotkeyTooltip();
-
-            string apiTokenPath = Path.Combine(appFolder, "StaffAPI.txt");
-            if (File.Exists(apiTokenPath))
-            {
-                try
-                {
-                    _apiToken = File.ReadAllLines(apiTokenPath, Encoding.UTF8)[0];
-                    _authenticated = true;
-                    authedLabel.Text = "Authenticated using staff API token.";
-                    authedLabel.Foreground = SuccessBrush;
-                    statusPanel.Background = SuccessBrush;
-                    statusLabel.Text = "Ready";
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Error reading StaffAPI.txt: {ex.Message}\nFile is empty or the first line does not contain your token.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
-                    _authenticated = false;
-                    authedLabel.Text = "Not authenticated using staff API token.";
-                    authedLabel.Foreground = ErrorBrush;
-                    statusPanel.Background = ErrorBrush;
-                    statusIcon.Kind = PackIconKind.AlertCircle;
-                }
-
-            }
-            else
-            {
-                _authenticated = false;
-                authedLabel.Text = "Not authenticated using staff API token.";
-                authedLabel.Foreground = ErrorBrush;
-                statusPanel.Background = ErrorBrush;
-                statusIcon.Kind = PackIconKind.AlertCircle;
-            }
-
-            Loaded += (s, e) =>
-            {
-                var wndHelper = new WindowInteropHelper(this);
-                _source = HwndSource.FromHwnd(wndHelper.Handle);
-                _source.AddHook(HwndHook);
-
-                RegisterHotkeyFromSettings(wndHelper.Handle);
-                ThemeManager.Initialize(this);
-            };
 
             if (_authenticated == false)
             {
@@ -131,10 +111,75 @@ namespace TokenValidator
                 copyUserIDButton.IsEnabled = false;
             }
         }
+
+        private async Task InitHotkey()
+        {
+            await Task.Run(() =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    var wndHelper = new WindowInteropHelper(this);
+                    _source = HwndSource.FromHwnd(wndHelper.Handle);
+                    _source.AddHook(HwndHook);
+                    RegisterHotkeyFromSettings(wndHelper.Handle);
+                    ThemeManager.Initialize(this);
+                });
+            });
+        }
+
+        private async Task LoadAuthentication()
+        {
+            string apiTokenPath = Path.Combine(appFolder, "StaffAPI.txt");
+
+            await Task.Run(() =>
+            {
+                if (File.Exists(apiTokenPath))
+                {
+                    try
+                    {
+                        _apiToken = File.ReadAllLines(apiTokenPath, Encoding.UTF8)[0];
+                        _authenticated = true;
+
+                        Dispatcher.Invoke(() =>
+                        {
+                            authedLabel.Text = "Authenticated using staff API token.";
+                            authedLabel.Foreground = SuccessBrush;
+                            statusPanel.Background = SuccessBrush;
+                            statusLabel.Text = "Ready";
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        _authenticated = false;
+                        Dispatcher.Invoke(() => UpdateAuthenticationUI(_authenticated));
+                    }
+                }
+                else
+                {
+                    _authenticated = false;
+                    Dispatcher.Invoke(() => UpdateAuthenticationUI(_authenticated));
+                }
+            });
+        }
+
+        private void UpdateAuthenticationUI(bool isAuthenticated)
+        {
+            if (!isAuthenticated)
+            {
+                authedLabel.Text = "Not authenticated using staff API token.";
+                authedLabel.Foreground = ErrorBrush;
+                statusPanel.Background = ErrorBrush;
+                statusIcon.Kind = PackIconKind.AlertCircle;
+
+                scanQRButton.IsEnabled = false;
+                fromClipboardButton.IsEnabled = false;
+                copyUserIDButton.IsEnabled = false;
+            }
+        }
         #endregion
 
         #region Hotkey Registration
-        private static void RegisterHotkeyFromSettings(IntPtr hWnd)
+        private void RegisterHotkeyFromSettings(IntPtr hWnd)
         {
             int modifier = (int)KeyModifier.Alt;
             int key = 0x7B; 

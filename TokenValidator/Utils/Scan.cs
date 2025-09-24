@@ -55,8 +55,19 @@ namespace TokenValidator.Utils
 
             try
             {
+                using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, _scanCancellationTokenSource.Token);
                 string result = await ScanAllScreensForQrCodeAsync(screens, _scanCancellationTokenSource.Token);
                 return result;
+            }
+            catch(OperationCanceledException)
+            {
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Logging.LogException(ex);
+                return null;
             }
             finally
             {
@@ -88,7 +99,21 @@ namespace TokenValidator.Utils
 
         private void CleanupResources()
         {
-            _scanCancellationTokenSource.Dispose();
+            lock (_lockObject)
+            {
+                try
+                {
+                    if (_scanCancellationTokenSource != null)
+                    {
+                        _scanCancellationTokenSource.Dispose();
+                        _scanCancellationTokenSource = new CancellationTokenSource();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logging.LogException(ex);
+                }
+            }
         }
 
         private void ResetCancellationToken()
@@ -214,28 +239,7 @@ namespace TokenValidator.Utils
                     if (result != null) return result;
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    int gridSize = (screenshot.Width > 2560 || screenshot.Height > 1440) ? 4 :
-                                   (screenshot.Width > 1920 || screenshot.Height > 1080) ? 3 : 2;
-                    int sectionWidth = screenshot.Width / gridSize;
-                    int sectionHeight = screenshot.Height / gridSize;
-                    int overlap = 150;
-
-                    var sections = new List<(int x, int y, int width, int height)>();
-
-                    for (int y = 0; y < gridSize; y++)
-                    {
-                        for (int x = 0; x < gridSize; x++)
-                        {
-                            cancellationToken.ThrowIfCancellationRequested();
-
-                            int startX = Math.Max(0, x * sectionWidth - overlap);
-                            int startY = Math.Max(0, y * sectionHeight - overlap);
-                            int width = Math.Min(sectionWidth + 2 * overlap, screenshot.Width - startX);
-                            int height = Math.Min(sectionHeight + 2 * overlap, screenshot.Height - startY);
-
-                            sections.Add((startX, startY, width, height));
-                        }
-                    }
+                    var regions = DetectPotentialQRRegions(screenshot);
 
                     var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                     var options = new ParallelOptions { CancellationToken = cts.Token, MaxDegreeOfParallelism = Environment.ProcessorCount };
@@ -244,13 +248,11 @@ namespace TokenValidator.Utils
 
                     try
                     {
-                        Parallel.ForEach(sections, options, (section, state) =>
+                        Parallel.ForEach(regions, options, (region, state) =>
                         {
-                            using (var sectionBitmap = screenshot.Clone(
-                                new Rectangle(section.x, section.y, section.width, section.height),
-                                screenshot.PixelFormat))
+                            using (var sectionBitmap = screenshot.Clone(region, screenshot.PixelFormat))
                             {
-                                var localResult = TryEnhancedScanning(sectionBitmap, cts.Token);
+                                var localResult = TryEnchancedScanning(sectionBitmap, cts.Token);
                                 if (localResult != null)
                                 {
                                     finalResult = localResult;
@@ -287,7 +289,7 @@ namespace TokenValidator.Utils
             return result?.Text;
         }
 
-        private static string TryEnhancedScanning(Bitmap originalBitmap, CancellationToken cancellationToken)
+        private static string TryEnchancedScanning(Bitmap originalBitmap, CancellationToken cancellationToken)
         {
             if (cancellationToken.IsCancellationRequested) return null;
 
@@ -295,10 +297,15 @@ namespace TokenValidator.Utils
             if (result != null) return result;
             if (cancellationToken.IsCancellationRequested) return null;
 
-            var processingLevels = new[] { 0, 1, 2, -1 };
-            var scalingFactors = new[] { 2.0, 3.0, 1.5, 2.5, 4.0 };
+            using (var smartAdjusted = SmartContrastAdjustment(originalBitmap))
+            {
+                result = ScanBitmapForQrCode(smartAdjusted);
+                if (result != null) return result;
+            }
+            if (cancellationToken.IsCancellationRequested) return null;
 
-            foreach (double scale in scalingFactors)
+            var priorityScales = new[] { 2.0, 3.0 };
+            foreach (double scale in priorityScales)
             {
                 if (cancellationToken.IsCancellationRequested) return null;
 
@@ -307,85 +314,24 @@ namespace TokenValidator.Utils
                     result = ScanBitmapForQrCode(scaled);
                     if (result != null) return result;
 
-                    foreach (int level in new[] { 0, 1 })
+                    using (var scaledAdjusted = SmartContrastAdjustment(scaled))
                     {
-                        if (cancellationToken.IsCancellationRequested) return null;
-
-                        using (var enhanced = EnhanceImage(scaled, level))
-                        {
-                            result = ScanBitmapForQrCode(enhanced);
-                            if (result != null) return result;
-                        }
-                    }
-                }
-            }
-
-            foreach (int level in processingLevels)
-            {
-                if (cancellationToken.IsCancellationRequested) return null;
-
-                using (var processed = EnhanceImage(originalBitmap, level))
-                {
-                    result = ScanBitmapForQrCode(processed);
-                    if (result != null) return result;
-
-                    foreach (double scale in new[] { 2.0, 3.0, 1.5 })
-                    {
-                        if (cancellationToken.IsCancellationRequested) return null;
-
-                        using (var scaled = ScaleBitmap(processed, scale))
-                        {
-                            result = ScanBitmapForQrCode(scaled);
-                            if (result != null) return result;
-                        }
+                        result = ScanBitmapForQrCode(scaledAdjusted);
+                        if (result != null) return result;
                     }
                 }
             }
 
             if (!cancellationToken.IsCancellationRequested)
             {
-                using (var thresholded = AdaptiveThreshold(originalBitmap))
-                {
-                    result = ScanBitmapForQrCode(thresholded);
-                    if (result != null) return result;
-
-                    foreach (double scale in new[] { 2.0, 3.0, 4.0 })
-                    {
-                        if (cancellationToken.IsCancellationRequested) return null;
-
-                        using (var scaledThresholded = ScaleBitmap(thresholded, scale))
-                        {
-                            result = ScanBitmapForQrCode(scaledThresholded);
-                            if (result != null) return result;
-                        }
-                    }
-                }
-
                 using (var otsu = OtsuThreshold(originalBitmap))
                 {
                     result = ScanBitmapForQrCode(otsu);
                     if (result != null) return result;
 
-                    foreach (double scale in new[] { 2.0, 3.0 })
+                    using (var scaledOtsu = ScaleBitmap(otsu, 2.0))
                     {
-                        if (cancellationToken.IsCancellationRequested) return null;
-
-                        using (var scaledOtsu = ScaleBitmap(otsu, scale))
-                        {
-                            result = ScanBitmapForQrCode(scaledOtsu);
-                            if (result != null) return result;
-                        }
-                    }
-                }
-
-                using (var filtered = MedianFilter(originalBitmap))
-                {
-                    result = ScanBitmapForQrCode(filtered);
-                    if (result != null) return result;
-
-                    using (var scaledFiltered = ScaleBitmap(filtered, 2.0))
-                    {
-                        result = ScanBitmapForQrCode(scaledFiltered);
+                        result = ScanBitmapForQrCode(scaledOtsu);
                         if (result != null) return result;
                     }
                 }
@@ -404,7 +350,7 @@ namespace TokenValidator.Utils
             var result = new Bitmap(width, height);
             using (var graphics = Graphics.FromImage(result))
             {
-                if (scale > 2.0)
+                if (scale > 1.0)
                 {
                     graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
                     graphics.PixelOffsetMode = PixelOffsetMode.Half;
@@ -448,53 +394,6 @@ namespace TokenValidator.Utils
                 graphics.DrawImage(original, new Rectangle(0, 0, original.Width, original.Height),
                     0, 0, original.Width, original.Height, GraphicsUnit.Pixel, attributes);
             }
-            return result;
-        }
-
-        private static Bitmap AdaptiveThreshold(Bitmap original)
-        {
-            Bitmap result = new(original.Width, original.Height);
-
-            using (var fastOriginal = new LockBitmap(original))
-            using (var fastResult = new LockBitmap(result))
-            {
-                fastOriginal.LockBits();
-                fastResult.LockBits();
-
-                int kernelSize = 21;
-                int halfKernel = kernelSize / 2;
-                int constant = 10;
-
-                for (int y = 0; y < original.Height; y++)
-                {
-                    for (int x = 0; x < original.Width; x++)
-                    {
-                        Color pixel = fastOriginal.GetPixel(x, y);
-                        int grayValue = (int)(0.299 * pixel.R + 0.587 * pixel.G + 0.114 * pixel.B);
-
-                        int sum = 0;
-                        int count = 0;
-
-                        for (int ky = Math.Max(0, y - halfKernel); ky < Math.Min(original.Height, y + halfKernel + 1); ky++)
-                        {
-                            for (int kx = Math.Max(0, x - halfKernel); kx < Math.Min(original.Width, x + halfKernel + 1); kx++)
-                            {
-                                Color neighborPixel = fastOriginal.GetPixel(kx, ky);
-                                int neighborGray = (int)(0.299 * neighborPixel.R + 0.587 * neighborPixel.G + 0.114 * neighborPixel.B);
-                                sum += neighborGray;
-                                count++;
-                            }
-                        }
-
-                        int average = sum / count;
-                        Color newColor = (grayValue < average - constant) ? Color.Black : Color.White;
-                        fastResult.SetPixel(x, y, newColor);
-                    }
-                }
-                fastResult.UnlockBits();
-                fastOriginal.UnlockBits();
-            }
-
             return result;
         }
 
@@ -573,47 +472,180 @@ namespace TokenValidator.Utils
 
             return result;
         }
+        #endregion
 
-        private static Bitmap MedianFilter(Bitmap original)
+        #region QR Detection Improvements
+
+        private static List<Rectangle> DetectPotentialQRRegions(Bitmap bitmap)
         {
-            Bitmap result = new(original.Width, original.Height);
-            int kernelSize = 3;
-            int halfKernel = kernelSize / 2;
+            var regions = new List<Rectangle>();
 
-            using (var fastOriginal = new LockBitmap(original))
-            using (var fastResult = new LockBitmap(result))
+            if (bitmap.Width > 1920 || bitmap.Height > 1080)
             {
-                fastOriginal.LockBits();
-                fastResult.LockBits();
+                regions.AddRange(CreateGridRegions(bitmap));
+                return regions;
+            }
 
-                for (int y = 0; y < original.Height; y++)
+            var finderCandidates = FindFinderPatternCandidates(bitmap);
+
+            if (finderCandidates.Count >= 2) 
+            {
+                var bounds = CalculateQRBoundsFromCandidates(finderCandidates, bitmap);
+                if (bounds != Rectangle.Empty)
                 {
-                    for (int x = 0; x < original.Width; x++)
+                    regions.Add(bounds);
+                }
+            }
+
+            if (regions.Count == 0)
+            {
+                regions.AddRange(CreateGridRegions(bitmap));
+            }
+
+            return regions;
+        }
+
+        private static List<Point> FindFinderPatternCandidates(Bitmap bitmap)
+        {
+            var candidates = new List<Point>();
+
+            using (var fastBitmap = new LockBitmap(bitmap))
+            {
+                fastBitmap.LockBits();
+
+                for (int y = 20; y < bitmap.Height - 20; y += 8)
+                {
+                    for (int x = 20; x < bitmap.Width - 20; x += 8)
                     {
-                        List<int> values = new List<int>();
-
-                        for (int ky = Math.Max(0, y - halfKernel); ky < Math.Min(original.Height, y + halfKernel + 1); ky++)
+                        if (IsLikelyFinderPattern(fastBitmap, x, y))
                         {
-                            for (int kx = Math.Max(0, x - halfKernel); kx < Math.Min(original.Width, x + halfKernel + 1); kx++)
-                            {
-                                Color pixel = fastOriginal.GetPixel(kx, ky);
-                                int grayValue = (int)(0.299 * pixel.R + 0.587 * pixel.G + 0.114 * pixel.B);
-                                values.Add(grayValue);
-                            }
+                            candidates.Add(new Point(x, y));
+                            x += 40; 
                         }
-
-                        values.Sort();
-                        int median = values[values.Count / 2];
-                        Color newColor = Color.FromArgb(median, median, median);
-                        fastResult.SetPixel(x, y, newColor);
                     }
                 }
 
-                fastResult.UnlockBits();
-                fastOriginal.UnlockBits();
+                fastBitmap.UnlockBits();
             }
 
-            return result;
+            return candidates;
+        }
+
+        private static bool IsLikelyFinderPattern(LockBitmap fastBitmap, int startX, int startY)
+        {
+            try
+            {
+                Color center = fastBitmap.GetPixel(startX, startY);
+                Color right = fastBitmap.GetPixel(startX + 10, startY);
+                Color bottom = fastBitmap.GetPixel(startX, startY + 10);
+
+                int centerGray = (center.R + center.G + center.B) / 3;
+                int rightGray = (right.R + right.G + right.B) / 3;
+                int bottomGray = (bottom.R + bottom.G + bottom.B) / 3;
+
+                return centerGray < 100 && (rightGray > centerGray + 50 || bottomGray > centerGray + 50);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static Rectangle CalculateQRBoundsFromCandidates(List<Point> candidates, Bitmap bitmap)
+        {
+            if (candidates.Count < 2) return Rectangle.Empty;
+
+            int minX = candidates.Min(p => p.X);
+            int maxX = candidates.Max(p => p.X);
+            int minY = candidates.Min(p => p.Y);
+            int maxY = candidates.Max(p => p.Y);
+
+            int padding = Math.Max(50, (maxX - minX) / 4);
+
+            return new Rectangle(
+                Math.Max(0, minX - padding),
+                Math.Max(0, minY - padding),
+                Math.Min(maxX - minX + 2 * padding, bitmap.Width - Math.Max(0, minX - padding)),
+                Math.Min(maxY - minY + 2 * padding, bitmap.Height - Math.Max(0, minY - padding))
+            );
+        }
+
+        private static List<Rectangle> CreateGridRegions(Bitmap bitmap)
+        {
+            var regions = new List<Rectangle>();
+
+            int gridSize = (bitmap.Width > 2560 || bitmap.Height > 1440) ? 4 :
+                           (bitmap.Width > 1920 || bitmap.Height > 1080) ? 3 : 2;
+
+            int sectionWidth = bitmap.Width / gridSize;
+            int sectionHeight = bitmap.Height / gridSize;
+            int overlap = 100; 
+
+            for (int y = 0; y < gridSize; y++)
+            {
+                for (int x = 0; x < gridSize; x++)
+                {
+                    int startX = Math.Max(0, x * sectionWidth - overlap);
+                    int startY = Math.Max(0, y * sectionHeight - overlap);
+                    int width = Math.Min(sectionWidth + 2 * overlap, bitmap.Width - startX);
+                    int height = Math.Min(sectionHeight + 2 * overlap, bitmap.Height - startY);
+
+                    regions.Add(new Rectangle(startX, startY, width, height));
+                }
+            }
+
+            return regions;
+        }
+
+        private static (double Contrast, double Brightness) AnalyzeImageStats(Bitmap bitmap)
+        {
+            var values = new List<int>();
+
+            using (var fastBitmap = new LockBitmap(bitmap))
+            {
+                fastBitmap.LockBits();
+                
+                for (int y = 0; y < bitmap.Height; y += 4)
+                {
+                    for (int x = 0; x < bitmap.Width; x += 4)
+                    {
+                        Color pixel = fastBitmap.GetPixel(x, y);
+                        int gray = (int)(0.299 * pixel.R + 0.587 * pixel.G + 0.114 * pixel.B);
+                        values.Add(gray);
+                    }
+                }
+
+                fastBitmap.UnlockBits();
+            }
+
+            if (values.Count == 0) return (0.5, 0.5);
+
+            double mean = values.Average();
+            double variance = values.Average(v => Math.Pow(v - mean, 2));
+            double contrast = Math.Sqrt(variance) / 255.0;
+            double brightness = mean / 255.0;
+
+            return (contrast, brightness);
+        }
+
+        private static Bitmap SmartContrastAdjustment(Bitmap original)
+        {
+            var stats = AnalyzeImageStats(original);
+
+            if (stats.Contrast < 0.3)
+            {
+                return EnhanceImage(original, 2);
+            }
+            else if (stats.Brightness < 0.3)
+            {
+                return EnhanceImage(original, 1); 
+            }
+            else if (stats.Brightness > 0.7)
+            {
+                return EnhanceImage(original, -1);
+            }
+
+            return new Bitmap(original);
         }
         #endregion
     }
