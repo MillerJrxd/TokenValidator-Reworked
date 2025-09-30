@@ -474,7 +474,7 @@ namespace TokenValidator.Utils
         }
         #endregion
 
-        #region QR Detection Improvements
+        #region QR Detection
 
         private static List<Rectangle> DetectPotentialQRRegions(Bitmap bitmap)
         {

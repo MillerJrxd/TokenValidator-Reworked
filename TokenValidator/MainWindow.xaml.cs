@@ -1,19 +1,20 @@
-﻿using Newtonsoft.Json;
+﻿using MaterialDesignThemes.Wpf;
+using Newtonsoft.Json;
 using System.IO;
 using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
+using TokenValidator.Models;
+using TokenValidator.Utils;
 using ZXing;
 using ZXing.Common;
-using MessageBox = System.Windows.MessageBox;
 using Clipboard = System.Windows.Clipboard;
-using TokenValidator.Utils;
-using MaterialDesignThemes.Wpf;
-using TokenValidator.Models;
-using System.Windows.Threading;
+using MessageBox = System.Windows.MessageBox;
 
 namespace TokenValidator
 {
@@ -74,6 +75,7 @@ namespace TokenValidator
         private static readonly SolidColorBrush ErrorBrush = new(System.Windows.Media.Color.FromRgb(220, 20, 60));
         private static readonly SolidColorBrush SuccessBrush = new(System.Windows.Media.Color.FromRgb(0, 191, 255));
         public VersionViewModel ViewModel { get; private set; }
+        private Border? _copiedNotification;
         #endregion
 
         #region Constructor
@@ -600,6 +602,7 @@ namespace TokenValidator
                 try
                 {
                     Clipboard.SetText(userIDLabel.Text);
+                    ShowCopiedNotification();
                 }
                 catch (COMException ex) when (ex.ErrorCode == unchecked((int)0x800401D0))
                 {
@@ -715,6 +718,130 @@ namespace TokenValidator
         {
             base.OnContentRendered(e);
             ThemeManager.Initialize(this);
+        }
+
+        private async void ShowCopiedNotification()
+        {
+            if (_copiedNotification != null)
+            {
+                var mainGrid1 = this.Content as Grid;
+                mainGrid1?.Children.Remove(_copiedNotification);
+                _copiedNotification = null;
+            }
+
+            _copiedNotification = new Border
+            {
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(240, 0, 191, 255)),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(24, 14, 24, 14),
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 60, 0, 0),
+                Opacity = 0,
+                Effect = new System.Windows.Media.Effects.DropShadowEffect
+                {
+                    Color = Colors.Black,
+                    Direction = 270,
+                    ShadowDepth = 4,
+                    BlurRadius = 20,
+                    Opacity = 0.4
+                }
+            };
+
+            var stackPanel = new System.Windows.Controls.StackPanel
+            {
+                Orientation = System.Windows.Controls.Orientation.Horizontal
+            };
+
+            var icon = new PackIcon
+            {
+                Kind = PackIconKind.CheckCircle,
+                Width = 22,
+                Height = 22,
+                Foreground = new SolidColorBrush(Colors.White),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 10, 0)
+            };
+
+            // Create the text
+            var textBlock = new TextBlock
+            {
+                Text = "User ID Copied!",
+                FontSize = 15,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Colors.White),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            stackPanel.Children.Add(icon);
+            stackPanel.Children.Add(textBlock);
+            _copiedNotification.Child = stackPanel;
+
+            var mainGrid = this.Content as Grid;
+            if (mainGrid != null)
+            {
+                mainGrid.Children.Add(_copiedNotification);
+            }
+
+            var fadeInAnimation = new System.Windows.Media.Animation.DoubleAnimation
+            {
+                From = 0,
+                To = 1,
+                Duration = TimeSpan.FromMilliseconds(400),
+                EasingFunction = new System.Windows.Media.Animation.CubicEase
+                {
+                    EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut
+                }
+            };
+
+            var slideDownAnimation = new System.Windows.Media.Animation.ThicknessAnimation
+            {
+                From = new Thickness(0, 40, 0, 0),
+                To = new Thickness(0, 60, 0, 0),
+                Duration = TimeSpan.FromMilliseconds(400),
+                EasingFunction = new System.Windows.Media.Animation.CubicEase
+                {
+                    EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut
+                }
+            };
+
+            _copiedNotification.BeginAnimation(Border.OpacityProperty, fadeInAnimation);
+            _copiedNotification.BeginAnimation(Border.MarginProperty, slideDownAnimation);
+
+            await Task.Delay(2000);
+
+            var fadeOutAnimation = new System.Windows.Media.Animation.DoubleAnimation
+            {
+                From = 1,
+                To = 0,
+                Duration = TimeSpan.FromMilliseconds(600),
+                EasingFunction = new System.Windows.Media.Animation.CubicEase
+                {
+                    EasingMode = System.Windows.Media.Animation.EasingMode.EaseIn
+                }
+            };
+
+            var slideUpAnimation = new System.Windows.Media.Animation.ThicknessAnimation
+            {
+                From = new Thickness(0, 60, 0, 0),
+                To = new Thickness(0, 40, 0, 0),
+                Duration = TimeSpan.FromMilliseconds(600),
+                EasingFunction = new System.Windows.Media.Animation.CubicEase
+                {
+                    EasingMode = System.Windows.Media.Animation.EasingMode.EaseIn
+                }
+            };
+
+            _copiedNotification.BeginAnimation(Border.OpacityProperty, fadeOutAnimation);
+            _copiedNotification.BeginAnimation(Border.MarginProperty, slideUpAnimation);
+
+            await Task.Delay(600);
+
+            if (mainGrid != null && _copiedNotification != null)
+            {
+                mainGrid.Children.Remove(_copiedNotification);
+                _copiedNotification = null;
+            }
         }
         #endregion
     }
