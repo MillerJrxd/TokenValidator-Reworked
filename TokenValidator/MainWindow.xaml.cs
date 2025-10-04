@@ -361,9 +361,9 @@ namespace TokenValidator
 
             _isScanning = true;
 
-            using (var timeoutCts = new CancellationTokenSource(5000))
+            try
             {
-                try
+                using (var timeoutCts = new CancellationTokenSource(5000))
                 {
                     var pos = GetCursorPosition();
 
@@ -391,7 +391,6 @@ namespace TokenValidator
                     {
                         MessageBox.Show("QR code not found.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
                         statusIcon.Kind = PackIconKind.AlertCircle;
-                        return;
                     }
                     else
                     {
@@ -399,16 +398,17 @@ namespace TokenValidator
                         await ValidateTokenAsync(decoded);
                     }
                 }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Error scanning QR code: {ex.Message}", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
-                }
             }
-
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-
-            _isScanning = false;
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error scanning QR code: {ex.Message}", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                _isScanning = false;
+            }
         }
         #endregion
 
