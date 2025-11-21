@@ -57,7 +57,7 @@ namespace TokenValidator.Models
                 var assembly = Assembly.GetExecutingAssembly();
                 var version = Assembly.GetExecutingAssembly().GetName().Version;
 
-                if (version.Build == 0 && version.Revision == 0)
+                 if (version.Build == 0 && version.Revision == 0)
                 {
                     var filePath = Assembly.GetExecutingAssembly().Location;
                     return File.GetLastWriteTime(filePath);

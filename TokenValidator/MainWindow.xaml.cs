@@ -21,7 +21,7 @@ namespace TokenValidator
     /// <summary>
     /// Interaction logic for MainWindow.xaml
     /// </summary>
-    public partial class MainWindow : Window
+    public partial class MainWindow : Window, IDisposable
     {
         #region Hotkey and Cursor Position Detection
         //Credits to zabszk
@@ -842,6 +842,11 @@ namespace TokenValidator
                 mainGrid.Children.Remove(_copiedNotification);
                 _copiedNotification = null;
             }
+        }
+
+        public void Dispose()
+        {
+            GC.SuppressFinalize(this);
         }
         #endregion
     }
