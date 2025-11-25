@@ -681,7 +681,7 @@ namespace TokenValidator
                 }
                 else if (Properties.Settings.Default.SeasonalEffects != currentSeasonalSettings)
                 {
-                    ThemeManager.UpdateSesonalEffects();
+                    ThemeManager.UpdateSeasonalEffects();
                 }
             }
         }

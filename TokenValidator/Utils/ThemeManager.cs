@@ -91,7 +91,7 @@ namespace TokenValidator.Utils
                 SeasonalEffectsEnabled = false;
             }
             SeasonalEffectsEnabled = _seasonalEffectsEnabled;
-            UpdateSesonalEffects();
+            UpdateSeasonalEffects();
         }
 
         public static void ApplySeasonalTheme(Window? window = null)
@@ -112,7 +112,7 @@ namespace TokenValidator.Utils
             }
         }
 
-        public static void UpdateSesonalEffects()
+        public static void UpdateSeasonalEffects()
         {
             if (Properties.Settings.Default.SeasonalEffects)
             {
