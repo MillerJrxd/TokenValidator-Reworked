@@ -45,41 +45,38 @@ namespace TokenValidator.Models
             }
         }
 
-        public Color GetPixel(int x, int y)
+        public unsafe Color GetPixel(int x, int y)
         {
             if (bitmapData == null)
                 return source.GetPixel(x, y);
 
-            int offset = ((y * Width) + x) * 4;
+            fixed (byte* ptr = Pixels)
+            {
+                int offset = ((y * Width) + x) * 4;
+                byte* pixel = ptr + offset;
 
-            if (offset + 3 >= Pixels.Length)
-                return Color.Black;
-
-            byte b = Pixels[offset];
-            byte g = Pixels[offset + 1];
-            byte r = Pixels[offset + 2];
-            byte a = Pixels[offset + 3];
-
-            return Color.FromArgb(a, r, g, b);
+                return Color.FromArgb(*(pixel + 3), *(pixel + 2), *(pixel + 1), *pixel);
+            }
         }
 
-        public void SetPixel(int x, int y, Color color)
+        public unsafe void SetPixel(int x, int y, Color color)
         {
             if (bitmapData == null)
             {
                 source.SetPixel(x, y, color);
                 return;
             }
+            
+            fixed (byte* ptr = Pixels)
+            {
+                int offset = ((y * Width) + x) * 4;
+                byte* pixel = ptr + offset;
 
-            int offset = ((y * Width) + x) * 4;
-
-            if (offset + 3 >= Pixels.Length)
-                return;
-
-            Pixels[offset] = color.B;
-            Pixels[offset + 1] = color.G;
-            Pixels[offset + 2] = color.R;
-            Pixels[offset + 3] = color.A;
+                *pixel = color.B;
+                *(pixel + 1) = color.G;
+                *(pixel + 2) = color.R;
+                *(pixel + 3) = color.A;
+            }
         }
 
         public void UnlockBits()

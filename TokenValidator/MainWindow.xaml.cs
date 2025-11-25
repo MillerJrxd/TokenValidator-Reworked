@@ -681,7 +681,7 @@ namespace TokenValidator
                 }
                 else if (Properties.Settings.Default.SeasonalEffects != currentSeasonalSettings)
                 {
-                    ThemeManager.UpdateSeasonalEffects();
+                    ThemeManager.UpdateSesonalEffects();
                 }
             }
         }
@@ -763,7 +763,6 @@ namespace TokenValidator
                 Margin = new Thickness(0, 0, 10, 0)
             };
 
-            // Create the text
             var textBlock = new TextBlock
             {
                 Text = "User ID Copied!",

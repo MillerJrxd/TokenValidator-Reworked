@@ -1,33 +1,34 @@
-﻿using System.Windows.Controls;
-using System.Windows.Media.Animation;
+﻿using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
-using System.Windows.Shapes;
-using System.Windows;
-using System.Windows.Threading;
-using Panel = System.Windows.Controls.Panel;
-using Color = System.Windows.Media.Color;
-using Button = System.Windows.Controls.Button;
-using Brushes = System.Windows.Media.Brushes;
 using System.Windows.Media.Effects;
+using System.Windows.Shapes;
+using System.Windows.Threading;
+using Brushes = System.Windows.Media.Brushes;
+using Button = System.Windows.Controls.Button;
+using Color = System.Windows.Media.Color;
+using Panel = System.Windows.Controls.Panel;
 
 namespace TokenValidator.Utils
 {
     public static class ThemeManager
     {
         #region Variables
-        private static bool _seasonalEffectsEnabled = false;
+        private static bool _seasonalEffectsEnabled = true;
         private static Canvas? _snowCanvas;
         private static Canvas? _lightsCanvas;
-        private static DispatcherTimer? _snowMonitorTimer;
+        private static DispatcherTimer? _animationTimer;
         private static DispatcherTimer? _lightsTimer;
         private static Window? _mainWindow;
         private static readonly List<Button> _modifiedButtons = new();
         private static readonly List<Ellipse> _lightBulbs = new();
+        private static readonly List<Snowflake> _snowflakes = new();
+        private static readonly Random _random = new();
 
         public static bool SeasonalEffectsEnabled
         {
             get => _seasonalEffectsEnabled;
-            set
+            private set
             {
                 if (_seasonalEffectsEnabled == value) return;
 
@@ -47,7 +48,35 @@ namespace TokenValidator.Utils
         }
         #endregion
 
-        #region Initialization/Clearing
+        #region Snowflake Class
+        private class Snowflake
+        {
+            public Ellipse Element { get; set; }
+            public double X { get; set; }
+            public double Y { get; set; }
+            public double VelocityY { get; set; }
+            public double VelocityX { get; set; }
+            public double SwaySpeed { get; set; }
+            public double SwayAmplitude { get; set; }
+            public double SwayOffset { get; set; }
+            public double BaseX { get; set; }
+
+            public Snowflake(Ellipse element, double x, double y, double velocityY, double swaySpeed, double swayAmplitude)
+            {
+                Element = element;
+                X = x;
+                Y = y;
+                BaseX = x;
+                VelocityY = velocityY;
+                VelocityX = 0;
+                SwaySpeed = swaySpeed;
+                SwayAmplitude = swayAmplitude;
+                SwayOffset = _random.NextDouble() * 2 * Math.PI;
+            }
+        }
+        #endregion
+
+        #region Init/Clearing
         public static void Initialize(Window mainWindow)
         {
             _mainWindow = mainWindow;
@@ -57,12 +86,12 @@ namespace TokenValidator.Utils
             {
                 SeasonalEffectsEnabled = Properties.Settings.Default?.SeasonalEffects ?? false;
             }
-            catch 
+            catch (Exception)
             {
                 SeasonalEffectsEnabled = false;
             }
             SeasonalEffectsEnabled = _seasonalEffectsEnabled;
-            UpdateSeasonalEffects();
+            UpdateSesonalEffects();
         }
 
         public static void ApplySeasonalTheme(Window? window = null)
@@ -70,10 +99,10 @@ namespace TokenValidator.Utils
             if (window == null) return;
 
             ClearSeasonalEffects();
-            
+
             var today = DateTime.Now;
-            
-            if (today.Month == 12 && today.Day >= 11 && today.Day <= 30)
+
+            if (today.Month == 11 & today.Day >= 11 && today.Day <= 30)
             {
                 if (Properties.Settings.Default.SeasonalEffects)
                 {
@@ -83,7 +112,7 @@ namespace TokenValidator.Utils
             }
         }
 
-        public static void UpdateSeasonalEffects()
+        public static void UpdateSesonalEffects()
         {
             if (Properties.Settings.Default.SeasonalEffects)
             {
@@ -118,10 +147,10 @@ namespace TokenValidator.Utils
                 _lightsCanvas = null;
             }
 
-            if (_snowMonitorTimer != null)
+            if (_animationTimer != null)
             {
-                _snowMonitorTimer.Stop();
-                _snowMonitorTimer = null;
+                _animationTimer.Stop();
+                _animationTimer = null;
             }
 
             if (_lightsTimer != null)
@@ -129,6 +158,8 @@ namespace TokenValidator.Utils
                 _lightsTimer.Stop();
                 _lightsTimer = null;
             }
+
+            _snowflakes.Clear();
 
             foreach (var button in _modifiedButtons)
             {
@@ -141,7 +172,11 @@ namespace TokenValidator.Utils
             }
             _modifiedButtons.Clear();
             _lightBulbs.Clear();
-            _mainWindow.IsVisibleChanged -= OnWindowVisibilityChanged;
+
+            if (_mainWindow != null)
+            {
+                _mainWindow.IsVisibleChanged -= OnWindowVisibilityChanged;
+            }
         }
 
         private static void OnWindowVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -158,8 +193,8 @@ namespace TokenValidator.Utils
 
         private static void StartAnimations()
         {
-            if (_snowMonitorTimer != null && !_snowMonitorTimer.IsEnabled)
-                _snowMonitorTimer.Start();
+            if (_animationTimer != null && !_animationTimer.IsEnabled)
+                _animationTimer.Start();
 
             if (_lightsTimer != null && !_lightsTimer.IsEnabled)
                 _lightsTimer.Start();
@@ -167,10 +202,9 @@ namespace TokenValidator.Utils
 
         private static void StopAnimations()
         {
-            _snowMonitorTimer?.Stop();
+            _animationTimer?.Stop();
             _lightsTimer?.Stop();
         }
-
         #endregion
 
         #region Winter Theme
@@ -181,209 +215,214 @@ namespace TokenValidator.Utils
             _snowCanvas = new Canvas
             {
                 Background = Brushes.Transparent,
-                IsHitTestVisible = false
+                IsHitTestVisible = false,
+                CacheMode = new BitmapCache { EnableClearType = true, RenderAtScale = 1 }
             };
 
             Grid.SetRowSpan(_snowCanvas, 3);
             ((Grid)window.Content).Children.Add(_snowCanvas);
 
-            StartSnowAnimation(window);
+            InitializeSnowflakes(window);
+            StartSnowAnimations();
         }
 
+        private static void InitializeSnowflakes(Window window)
+        {
+            _snowflakes.Clear();
+            int snowflakeCount = 50;
+
+            for (int i = 0; i < snowflakeCount; i++)
+            {
+                var size = 2 + (i % 3) * 0.5;
+                var snowflake = new Ellipse
+                {
+                    Width = size,
+                    Height = size,
+                    Fill = Brushes.White,
+                    Opacity = 0.4 + (i % 8) * 0.05,
+                    CacheMode = new BitmapCache { EnableClearType = true, RenderAtScale = 1 }
+                };
+
+                double x = _random.Next(0, (int)window.ActualWidth);
+                double y = _random.Next(0, (int)window.ActualHeight);
+                double velocityY = 0.5 + _random.NextDouble() * 1.5;
+                double swaySpeed = 0.02 + _random.NextDouble() * 0.03;
+                double swayAmplitude = 15 + _random.NextDouble() * 25;
+
+                var flake = new Snowflake(snowflake, x, y, velocityY, swaySpeed, swayAmplitude);
+                _snowflakes.Add(flake);
+
+                Canvas.SetLeft(snowflake, x);
+                Canvas.SetTop(snowflake, y);
+                _snowCanvas.Children.Add(snowflake);
+            }
+        }
+
+        private static void StartSnowAnimations()
+        {
+            _animationTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(33)
+            };
+            _animationTimer.Tick += UpdateSnowflakes;
+            _animationTimer.Start();
+        }
+
+        private static void UpdateSnowflakes(object? sender, EventArgs e)
+        {
+            if (_mainWindow == null || _snowCanvas == null) return;
+
+            double windowHeight = _mainWindow.ActualHeight;
+            double windowWidth = _mainWindow.ActualWidth;
+
+            foreach (var flake in _snowflakes)
+            {
+                flake.Y += flake.VelocityY;
+
+                flake.SwayOffset += flake.SwaySpeed;
+                flake.X = flake.BaseX + Math.Sin(flake.SwayOffset) * flake.SwayAmplitude;
+
+                if (flake.Y > windowHeight + 10)
+                {
+                    flake.Y = -10;
+                    flake.BaseX = _random.Next(0, (int)windowWidth);
+                    flake.X = flake.BaseX;
+                    flake.SwayOffset = _random.NextDouble() * Math.PI * 2;
+                }
+
+                if (flake.X < -10)
+                {
+                    flake.BaseX += windowWidth + 20;
+                    flake.X = flake.BaseX + Math.Sin(flake.SwayOffset) * flake.SwayAmplitude;
+                }
+                else if (flake.X > windowWidth + 10)
+                {
+                    flake.BaseX -= windowWidth + 20;
+                    flake.X = flake.BaseX + Math.Sin(flake.SwayOffset) * flake.SwayAmplitude;
+                }
+
+                Canvas.SetLeft(flake.Element, flake.X);
+                Canvas.SetTop(flake.Element, flake.Y);
+            }
+        }
+        #endregion
+
+        #region Holiday Lights
         private static void AddHolidayLights(Window window)
         {
             _lightsCanvas = new Canvas
             {
                 Background = Brushes.Transparent,
                 IsHitTestVisible = false,
-                Margin = new Thickness(0, 30, 0, 0)
+                Margin = new Thickness(0, 30, 0, 0),
+                CacheMode = new BitmapCache { EnableClearType = true, RenderAtScale = 1 }
             };
 
             Grid.SetRowSpan(_lightsCanvas, 3);
             ((Grid)window.Content).Children.Add(_lightsCanvas);
 
-            int lightCount = 25;
+            int lightCount = 20;
             double spacing = window.ActualWidth / (lightCount + 1);
-            Random random = new();
-
-            for (int i = 0; i < lightCount; i++)
-            {
-                var light = new Ellipse
-                {
-                    Width = 12,
-                    Height = 12,
-                    Stroke = Brushes.Gold,
-                    StrokeThickness = 1,
-                    Fill = GetRandomLightColor(random),
-                    Tag = i
-                };
-
-                Canvas.SetLeft(light, spacing * (i + 1) - 6);
-                Canvas.SetTop(light, 5);
-                _lightsCanvas.Children.Add(light);
-                _lightBulbs.Add(light);
-            }
 
             var wire = new Polyline
             {
-                Points = new PointCollection(),
-                Stroke = Brushes.Goldenrod,
-                StrokeThickness = 1
+                Stroke = new SolidColorBrush(Color.FromRgb(184, 134, 11)),
+                StrokeThickness = 1.5,
+                Opacity = 0.6,
+                CacheMode = new BitmapCache { EnableClearType = true, RenderAtScale = 1 }
             };
 
             for (int i = 0; i < lightCount; i++)
             {
-                wire.Points.Add(new System.Windows.Point(spacing * (i + 1), 11));
+                double x = spacing * (i + 1);
+                double droop = Math.Sin((double)i / (lightCount - 1) * Math.PI) * 8;
+                wire.Points.Add(new System.Windows.Point(x, 11 + droop));
             }
 
             _lightsCanvas.Children.Add(wire);
             Panel.SetZIndex(wire, -1);
 
+            for (int i = 0; i < lightCount; i++)
+            {
+                double x = spacing * (i + 1);
+                double droop = Math.Sin((double)i / (lightCount - 1) * Math.PI) * 8;
+
+                var light = new Ellipse
+                {
+                    Width = 10,
+                    Height = 10,
+                    Stroke = new SolidColorBrush(Color.FromRgb(255, 215, 0)),
+                    StrokeThickness = 0.5,
+                    Fill = GetRandomLightColor(),
+                    Tag = i,
+                    CacheMode = new BitmapCache { EnableClearType = true, RenderAtScale = 1 }
+                };
+
+                Canvas.SetLeft(light, x - 5);
+                Canvas.SetTop(light, 6 + droop);
+                _lightsCanvas.Children.Add(light);
+                _lightBulbs.Add(light);
+            }
+
             _lightsTimer = new DispatcherTimer
             {
-                Interval = TimeSpan.FromMilliseconds(500)
+                Interval = TimeSpan.FromMilliseconds(800)
             };
-            _lightsTimer.Tick += (s, e) => AnimateLights(random);
+            _lightsTimer.Tick += AnimateLights;
             _lightsTimer.Start();
         }
 
-        private static System.Windows.Media.SolidColorBrush GetRandomLightColor(Random random)
+        private static SolidColorBrush GetRandomLightColor()
         {
-            Color[] colors = {
-                Colors.Red,
-                Colors.Green,
-                Colors.Blue,
-                Colors.Yellow,
-                Colors.Orange,
-                Colors.Purple,
-                Colors.Pink,
-                Colors.Cyan,
-                Colors.Magenta,
-                Colors.LightGreen
+            Color[] colors =
+            {
+                Color.FromRgb(255, 59, 59),   // Red
+                Color.FromRgb(76, 175, 80),   // Green
+                Color.FromRgb(33, 150, 243),  // Blue
+                Color.FromRgb(255, 235, 59),  // Yellow
+                Color.FromRgb(255, 152, 0),   // Orange
+                Color.FromRgb(156, 39, 176),  // Purple
+                Color.FromRgb(255, 105, 180), // Hot Pink
+                Color.FromRgb(0, 255, 255),   // Cyan
+                Color.FromRgb(255, 20, 147),  // Deep Pink
+                Color.FromRgb(50, 205, 50),   // Lime Green
+                Color.FromRgb(255, 215, 0),   // Gold
+                Color.FromRgb(138, 43, 226),  // Blue Violet
             };
 
-            return new SolidColorBrush(colors[random.Next(colors.Length)]);
+            return new SolidColorBrush(colors[_random.Next(colors.Length)]);
         }
 
-        private static void AnimateLights(Random random)
+        private static void AnimateLights(object? sender, EventArgs e)
         {
             foreach (var light in _lightBulbs)
             {
-                if (random.NextDouble() > 0.7)
+                if (_random.NextDouble() > 0.75)
                 {
-                    light.Fill = GetRandomLightColor(random);
+                    light.Fill = GetRandomLightColor();
                 }
 
-                var glow = new DropShadowEffect
+                if (_random.NextDouble() > 0.6)
                 {
-                    Color = ((SolidColorBrush)light.Fill).Color,
-                    BlurRadius = 10,
-                    ShadowDepth = 0,
-                    Opacity = 0.7
-                };
+                    var glow = new DropShadowEffect
+                    {
+                        Color = ((SolidColorBrush)light.Fill).Color,
+                        BlurRadius = 8,
+                        ShadowDepth = 0,
+                        Opacity = 0.8
+                    };
+                    light.Effect = glow;
 
-                light.Effect = glow;
-
-                var timer = new DispatcherTimer
-                {
-                    Interval = TimeSpan.FromMilliseconds(200)
-                };
-                timer.Tick += (s, e) =>
-                {
-                    light.Effect = null;
-                    timer.Stop();
-                };
-                timer.Start();
-            }
-        }
-
-        private static void StartSnowAnimation(Window window)
-        {
-            var random = new Random();
-            int snowflakeCount = 70;
-
-            _snowMonitorTimer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromSeconds(3)
-            };
-            _snowMonitorTimer.Tick += (s, e) => MonitorSnowflakes(window);
-            _snowMonitorTimer.Start();
-
-            for (int i = 0; i < snowflakeCount; i++)
-            {
-                CreateSnowflake(window, random, i);
-            }
-        }
-
-        private static void CreateSnowflake(Window window, Random random, int index)
-        {
-            if (_snowCanvas == null) return;
-
-            var snowflake = new Ellipse
-            {
-                Width = 2 + (index % 4),
-                Height = 2 + (index % 4),
-                Fill = Brushes.White,
-                Opacity = 0.5 + (index % 10) * 0.05,
-                Tag = index
-            };
-
-            _snowCanvas.Children.Add(snowflake);
-            AnimateSnowflake(window, snowflake, random);
-        }
-
-        private static void AnimateSnowflake(Window window, Ellipse snowflake, Random random)
-        {
-            double startX = random.Next(0, (int)window.ActualWidth);
-            double startY = random.Next(-100, -10);
-
-            Canvas.SetLeft(snowflake, startX);
-            Canvas.SetTop(snowflake, startY);
-
-            var fallDuration = TimeSpan.FromSeconds(5 + random.NextDouble() * 10);
-            var fallAnimation = new DoubleAnimation
-            {
-                To = window.ActualHeight + 10,
-                Duration = fallDuration,
-                FillBehavior = FillBehavior.Stop
-            };
-
-            var swayAnimation = new DoubleAnimation
-            {
-                From = startX,
-                To = startX + random.Next(-50, 50),
-                Duration = TimeSpan.FromSeconds(2 + random.NextDouble() * 3),
-                AutoReverse = true,
-                RepeatBehavior = RepeatBehavior.Forever
-            };
-
-            fallAnimation.Completed += (s, e) =>
-            {
-                if (_snowCanvas?.Children.Contains(snowflake) == true)
-                {
-                    Canvas.SetTop(snowflake, random.Next(-100, -10));
-                    Canvas.SetLeft(snowflake, random.Next(0, (int)window.ActualWidth));
-                    AnimateSnowflake(window, snowflake, random);
-                }
-            };
-
-            snowflake.BeginAnimation(Canvas.TopProperty, fallAnimation);
-            snowflake.BeginAnimation(Canvas.LeftProperty, swayAnimation);
-        }
-
-        private static void MonitorSnowflakes(Window window)
-        {
-            if (_snowCanvas == null) return;
-
-            var random = new Random();
-            foreach (var child in _snowCanvas.Children.OfType<Ellipse>())
-            {
-                var top = Canvas.GetTop(child);
-                if (top < 10)
-                {
-                    Canvas.SetTop(child, random.Next(-100, -10));
-                    Canvas.SetLeft(child, random.Next(0, (int)window.ActualWidth));
-                    AnimateSnowflake(window, child, random);
+                    var timer = new DispatcherTimer
+                    {
+                        Interval = TimeSpan.FromMilliseconds(300)
+                    };
+                    timer.Tick += (s, e) =>
+                    {
+                        light.Effect = null;
+                        timer.Stop();
+                    };
+                    timer.Start();
                 }
             }
         }

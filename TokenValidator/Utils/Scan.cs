@@ -24,7 +24,6 @@ namespace TokenValidator.Utils
                 ReturnCodabarStartEnd = false
             }
         };
-
         private static readonly BarcodeReaderGeneric _aggressiveReader = new BarcodeReaderGeneric
         {
             AutoRotate = true,
@@ -38,6 +37,8 @@ namespace TokenValidator.Utils
                 UseCode39ExtendedMode = true,
             }
         };
+        private static readonly Dictionary<int, (double Contrast, double Brightness)> _statsCache = new Dictionary<int, (double Contrast, double Brightness)>();
+
 
         private CancellationTokenSource _scanCancellationTokenSource;
         private readonly object _lockObject = new object();
@@ -466,7 +467,7 @@ namespace TokenValidator.Utils
             return result;
         }
 
-        private static Bitmap OtsuThreshold(Bitmap original)
+        private unsafe static Bitmap OtsuThreshold(Bitmap original)
         {
             Bitmap result = new Bitmap(original.Width, original.Height);
 
@@ -475,12 +476,19 @@ namespace TokenValidator.Utils
             {
                 fastOriginal.LockBits();
 
-                for (int y = 0; y < original.Height; y++)
+                fixed (byte* srcPtr = fastOriginal.Pixels)
                 {
-                    for (int x = 0; x < original.Width; x++)
+                    byte* ptr = srcPtr;
+                    int pixelCount = original.Width * original.Height;
+
+                    for (int i = 0; i < pixelCount; i++)
                     {
-                        Color pixel = fastOriginal.GetPixel(x, y);
-                        int grayValue = (int)(0.299 * pixel.R + 0.587 * pixel.G + 0.114 * pixel.B);
+                        byte b = *ptr++;
+                        byte g = *ptr++;
+                        byte r = *ptr++;
+                        ptr++; // Skip alpha
+
+                        int grayValue = (int)(0.299 * r + 0.587 * g + 0.114 * b);
                         histogram[grayValue]++;
                     }
                 }
@@ -524,23 +532,36 @@ namespace TokenValidator.Utils
                 fastOriginal.LockBits();
                 fastResult.LockBits();
 
-                for (int y = 0; y < original.Height; y++)
+                fixed (byte* srcPtr = fastOriginal.Pixels)
+                fixed (byte* dstPtr = fastResult.Pixels)
                 {
-                    for (int x = 0; x < original.Width; x++)
+                    byte* src = srcPtr;
+                    byte* dst = dstPtr;
+                    int pixelCount = original.Width * original.Height;
+
+                    for (int i = 0; i < pixelCount; i++)
                     {
-                        Color pixel = fastOriginal.GetPixel(x, y);
-                        int grayValue = (int)(0.299 * pixel.R + 0.587 * pixel.G + 0.114 * pixel.B);
-                        Color newColor = grayValue < threshold ? Color.Black : Color.White;
-                        fastResult.SetPixel(x, y, newColor);
+                        byte b = *src++;
+                        byte g = *src++;
+                        byte r = *src++;
+                        byte a = *src++;
+
+                        int grayValue = (int)(0.299 * r + 0.587 * g + 0.114 * b);
+                        byte newValue = (byte)(grayValue < threshold ? 0 : 255);
+
+                        *dst++ = newValue;  
+                        *dst++ = newValue;  
+                        *dst++ = newValue;  
+                        *dst++ = 255;       
                     }
                 }
 
                 fastResult.UnlockBits();
                 fastOriginal.UnlockBits();
             }
-
             return result;
         }
+        
         #endregion
 
         #region QR Detection
@@ -582,15 +603,57 @@ namespace TokenValidator.Utils
             {
                 fastBitmap.LockBits();
 
-                int stepSize = Math.Max(4, Math.Min(bitmap.Width, bitmap.Height) / 200);
-                for (int y = 20; y < bitmap.Height - 20; y += stepSize)
+                int baseStep = Math.Max(5, Math.Min(bitmap.Width, bitmap.Height) / 150);
+
+                var hotspots = new List<Point>();
+                int coarseStep = baseStep * 3;
+
+                for (int y = 20; y < bitmap.Height - 20; y += coarseStep)
                 {
-                    for (int x = 20; x < bitmap.Width - 20; x += stepSize)
+                    for (int x = 20; x < bitmap.Width - 20; x += coarseStep)
                     {
-                        if (IsLikelyFinderPattern(fastBitmap, x, y))
+                        if (IsLikelyFinderPattern(fastBitmap, x, y, 50))
                         {
-                            candidates.Add(new Point(x, y));
-                            x += stepSize * 3;
+                            hotspots.Add(new Point(x, y));
+                        }
+                    }
+                }
+
+                if (hotspots.Count > 0)
+                {
+                    int searchRadius = coarseStep * 2;
+
+                    foreach (var hotspot in hotspots)
+                    {
+                        int startX = Math.Max(20, hotspot.X - searchRadius);
+                        int endX = Math.Min(bitmap.Width - 20, hotspot.X + searchRadius);
+                        int startY = Math.Max(20, hotspot.Y - searchRadius);
+                        int endY = Math.Min(bitmap.Height - 20, hotspot.Y + searchRadius);
+
+                        for (int y = startY; y < endY; y += baseStep)
+                        {
+                            for (int x = startX; x < endX; x += baseStep)
+                            {
+                                if (IsLikelyFinderPattern(fastBitmap, x, y, 50))
+                                {
+                                    candidates.Add(new Point(x, y));
+                                    x += baseStep * 2; 
+                                }
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    for (int y = 20; y < bitmap.Height - 20; y += baseStep)
+                    {
+                        for (int x = 20; x < bitmap.Width - 20; x += baseStep)
+                        {
+                            if (IsLikelyFinderPattern(fastBitmap, x, y, 50))
+                            {
+                                candidates.Add(new Point(x, y));
+                                x += baseStep * 2;
+                            }
                         }
                     }
                 }
@@ -613,12 +676,22 @@ namespace TokenValidator.Utils
                 Color center = fastBitmap.GetPixel(startX, startY);
                 Color right = fastBitmap.GetPixel(startX + checkDistance, startY);
                 Color bottom = fastBitmap.GetPixel(startX, startY + checkDistance);
+                Color diagonal = fastBitmap.GetPixel(startX + checkDistance, startY + checkDistance);
 
-                int centerGray = (center.R + center.G + center.B) / 3;
-                int rightGray = (right.R + right.G + right.B) / 3;
-                int bottomGray = (bottom.R + bottom.G + bottom.B) / 3;
+                int centerGray = (77 * center.R + 150 * center.G + 29 * center.B) >> 8;
+                int rightGray = (77 * right.R + 150 * right.G + 29 * right.B) >> 8;
+                int bottomGray = (77 * bottom.R + 150 * bottom.G + 29 * bottom.B) >> 8;
+                int diagGray = (77 * diagonal.R + 150 * diagonal.G + 29 * diagonal.B) >> 8;
 
-                return centerGray < 100 && (rightGray > centerGray + 50 || bottomGray > centerGray + 50);
+                bool centerIsDark = centerGray < 100;
+                bool edgesAreLighter = (rightGray > centerGray + 40) ||
+                                       (bottomGray > centerGray + 40) ||
+                                       (diagGray > centerGray + 40);
+
+                int maxEdge = Math.Max(Math.Max(rightGray, bottomGray), diagGray);
+                bool hasContrast = (maxEdge - centerGray) > 50;
+
+                return centerIsDark && edgesAreLighter && hasContrast;
 
             }
             catch
@@ -682,7 +755,7 @@ namespace TokenValidator.Utils
                 .ToList();
         }
 
-        private static (double Contrast, double Brightness) AnalyzeImageStats(Bitmap bitmap)
+        private static unsafe (double Contrast, double Brightness) AnalyzeImageStats(Bitmap bitmap)
         {
             var values = new List<int>();
 
@@ -691,13 +764,19 @@ namespace TokenValidator.Utils
                 fastBitmap.LockBits();
 
                 int sampleStep = Math.Max(2, Math.Min(bitmap.Width, bitmap.Height) / 300);
-                for (int y = 0; y < bitmap.Height; y += sampleStep)
+
+                fixed (byte* ptr = fastBitmap.Pixels)
                 {
-                    for (int x = 0; x < bitmap.Width; x += sampleStep)
+                    for (int y = 0; y < bitmap.Height; y += sampleStep)
                     {
-                        Color pixel = fastBitmap.GetPixel(x, y);
-                        int gray = (int)(0.299 * pixel.R + 0.587 * pixel.G + 0.114 * pixel.B);
-                        values.Add(gray);
+                        for (int x = 0; x < bitmap.Width; x += sampleStep)
+                        {
+                            int offset = ((y * bitmap.Width) + x) * 4;
+                            byte* pixel = ptr + offset;
+
+                            int gray = (int)(0.299 * *(pixel + 2) + 0.587 * *(pixel + 1) + 0.114 * *pixel);
+                            values.Add(gray);
+                        }
                     }
                 }
 
@@ -716,17 +795,40 @@ namespace TokenValidator.Utils
 
         private static Bitmap SmartContrastAdjustment(Bitmap original)
         {
-            var stats = AnalyzeImageStats(original);
+            int hash = original.Width ^ original.Height ^ original.GetHashCode();
 
-            if (stats.Contrast < 0.3)
+            if (!_statsCache.TryGetValue(hash, out var stats))
+            {
+                stats = AnalyzeImageStats(original);
+
+                if (_statsCache.Count > 50)
+                {
+                    _statsCache.Clear();
+                }
+                _statsCache[hash] = stats;
+            }
+
+            if (stats.Contrast < 0.2)
+            {
+                return EnhanceImage(original, 3); 
+            }
+            else if (stats.Contrast < 0.3)
             {
                 return EnhanceImage(original, 2);
             }
-            else if (stats.Brightness < 0.3)
+            else if (stats.Brightness < 0.25)
+            {
+                return EnhanceImage(original, 2);
+            }
+            else if (stats.Brightness < 0.35)
             {
                 return EnhanceImage(original, 1);
             }
-            else if (stats.Brightness > 0.7)
+            else if (stats.Brightness > 0.75)
+            {
+                return EnhanceImage(original, -2);
+            }
+            else if (stats.Brightness > 0.65)
             {
                 return EnhanceImage(original, -1);
             }

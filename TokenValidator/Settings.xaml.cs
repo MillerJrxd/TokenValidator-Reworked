@@ -127,7 +127,7 @@ namespace TokenValidator
 
                 if (seasonalEffectsChanged)
                 {
-                    ThemeManager.UpdateSeasonalEffects();
+                    ThemeManager.UpdateSesonalEffects();
                 }
 
                 Properties.Settings.Default.QrScanHotkey = hotkeyTextBox.Text;

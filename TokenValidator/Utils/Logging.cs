@@ -1,4 +1,6 @@
 ﻿using System.IO;
+using System.Reflection.Emit;
+using System.Text;
 
 namespace TokenValidator.Utils
 {
@@ -6,7 +8,46 @@ namespace TokenValidator.Utils
     {
         private readonly static string LogFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TokenValidator", "Class Logs");
 
-        public static void LogException(Exception ex)
+        public enum LogLevel
+        {
+            Debug,
+            Info,
+            Warning,
+            Error,
+            Critical
+        }
+
+        public static void LogException(Exception ex, string? context = null)
+        {
+            LogError($"Exception occurred{(context != null ? $" in {context}" : "")}", ex);
+        }
+
+        public static void LogDebug(string message)
+        {
+            Log(LogLevel.Debug, message);
+        }
+
+        public static void LogInfo(string message)
+        {
+            Log(LogLevel.Info, message);
+        }
+
+        public static void LogWarning(string message)
+        {
+            Log(LogLevel.Warning, message);
+        }
+
+        public static void LogError (string message, Exception? ex = null)
+        {
+            Log(LogLevel.Error, message, ex);
+        }
+
+        public static void LogCritical(string message, Exception? ex = null)
+        {
+            Log(LogLevel.Critical, message, ex);
+        }
+
+        private static void Log(LogLevel level, string message, Exception? ex = null)
         {
             try
             {
@@ -15,26 +56,52 @@ namespace TokenValidator.Utils
                     Directory.CreateDirectory(LogFilePath);
                 }
 
-                string logFileName = $"log_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
+                string logFileName = $"log_{DateTime.Now:yyyyMMdd}.txt";
                 string logFile = Path.Combine(LogFilePath, logFileName);
 
-                using (StreamWriter writer = new StreamWriter(logFile, true))
+                var sb = new StringBuilder();
+                sb.AppendLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{level}] {message}");
+
+                if (ex != null)
                 {
-                    writer.WriteLine($"{DateTime.Now}: Exception occurred.");
-                    writer.WriteLine($"Type: {ex.GetType().FullName}");
-                    writer.WriteLine($"Message: {ex.Message}");
-                    writer.WriteLine($"StackTrace: {ex.StackTrace}");
+                    sb.AppendLine($"  Exception Type: {ex.GetType().FullName}");
+                    sb.AppendLine($"  Message: {ex.Message}");
+                    sb.AppendLine($"  StackTrace:");
+
+                    if (!string.IsNullOrEmpty(ex.StackTrace))
+                    {
+                        foreach (var line in ex.StackTrace.Split('\n'))
+                        {
+                            sb.AppendLine($"    {line.TrimEnd()}");
+                        }
+                    }
+
                     if (ex.InnerException != null)
                     {
-                        writer.WriteLine($"InnerException Type: {ex.InnerException.GetType().FullName}");
-                        writer.WriteLine($"InnerException: {ex.InnerException.Message}");
-                        writer.WriteLine($"InnerException StackTrace: {ex.InnerException.StackTrace}");
+                        sb.AppendLine($"  Inner Exception Type: {ex.InnerException.GetType().FullName}");
+                        sb.AppendLine($"  Inner Message: {ex.InnerException.Message}");
+
+                        if (!string.IsNullOrEmpty(ex.InnerException.StackTrace))
+                        {
+                            sb.AppendLine($"  Inner StackTrace:");
+                            foreach (var line in ex.InnerException.StackTrace.Split('\n'))
+                            {
+                                sb.AppendLine($"    {line.TrimEnd()}");
+                            }
+                        }
                     }
+                }
+
+                sb.AppendLine();
+
+                lock (typeof(Logging))
+                {
+                    File.AppendAllText(logFile, sb.ToString());
                 }
             }
             catch
             {
-                // If logging fails, there's nothing we can do.  
+
             }
         }
 
@@ -54,7 +121,7 @@ namespace TokenValidator.Utils
             }
             catch (Exception ex)
             {
-                LogException(ex);
+                LogException(ex, "ClearLogs");
             }
         }
     }
