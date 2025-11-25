@@ -102,7 +102,7 @@ namespace TokenValidator.Utils
 
             var today = DateTime.Now;
 
-            if (today.Month == 11 & today.Day >= 11 && today.Day <= 30)
+            if (today.Month == 12 & today.Day >= 11 && today.Day <= 30)
             {
                 if (Properties.Settings.Default.SeasonalEffects)
                 {
