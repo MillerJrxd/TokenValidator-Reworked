@@ -139,16 +139,25 @@ namespace TokenValidator
                 {
                     try
                     {
-                        _apiToken = File.ReadAllLines(apiTokenPath, Encoding.UTF8)[0];
-                        _authenticated = true;
+                        _apiToken = File.ReadAllLines(apiTokenPath, Encoding.UTF8)[0].Trim();
 
-                        Dispatcher.Invoke(() =>
+                        if (string.IsNullOrEmpty(_apiToken) || _apiToken.Length > 64)
                         {
-                            authedLabel.Text = "Authenticated using staff API token.";
-                            authedLabel.Foreground = SuccessBrush;
-                            statusPanel.Background = SuccessBrush;
-                            statusLabel.Text = "Ready";
-                        });
+                            _authenticated = false;
+                            Dispatcher.Invoke(() => UpdateAuthenticationUI(_authenticated));
+                        }
+                        else
+                        {
+                            _authenticated = true;
+
+                            Dispatcher.Invoke(() =>
+                            {
+                                authedLabel.Text = "Authenticated using staff API token.";
+                                authedLabel.Foreground = SuccessBrush;
+                                statusPanel.Background = SuccessBrush;
+                                statusLabel.Text = "Ready";
+                            });
+                        }
                     }
                     catch (Exception ex)
                     {
