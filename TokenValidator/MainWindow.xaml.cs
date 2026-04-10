@@ -14,7 +14,7 @@ using TokenValidator.Utils;
 using ZXing;
 using ZXing.Common;
 using Clipboard = System.Windows.Clipboard;
-using MessageBox = System.Windows.MessageBox;
+using MessageBox = TokenValidator.CustomMessageBox;
 
 namespace TokenValidator
 {
@@ -308,7 +308,7 @@ namespace TokenValidator
                         }
                         else
                         {
-                            statusLabel.Text = "QR code not found.";
+                            statusLabel.Text = "Error: QR code not found.";
                             statusPanel.Background = ErrorBrush;
                             MessageBox.Show("QR code not found.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
                             statusIcon.Kind = PackIconKind.AlertCircle;
@@ -317,7 +317,7 @@ namespace TokenValidator
                     else
                     {
                         _qrScanner.CancelScan();
-                        statusLabel.Text = "Scan timed out.";
+                        statusLabel.Text = "Timeout: Scan timed out";
                         statusPanel.Background = ErrorBrush;
                         MessageBox.Show("QR code scan timed out. Please try again.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
                         statusIcon.Kind = PackIconKind.AlertCircle;
@@ -326,9 +326,9 @@ namespace TokenValidator
                 catch (Exception ex)
                 {
                     Visibility = Visibility.Visible;
-                    statusLabel.Text = "Scan error: " + ex.Message;
+                    statusLabel.Text = "Error: Scan failed";
                     statusPanel.Background = ErrorBrush;
-                    MessageBox.Show($"Error scanning QR code: {ex.Message}", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show($"Error scanning QR code: \n{ex.Message}", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
                     statusIcon.Kind = PackIconKind.AlertCircle;
                 }
             }
@@ -441,9 +441,10 @@ namespace TokenValidator
             }
             catch (Exception ex)
             {
-                statusLabel.Text = $"Token validation failed: {ex.Message}";
+                statusLabel.Text = $"Error: Token validation failed";
                 statusPanel.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(169, 169, 169));
                 statusIcon.Kind = PackIconKind.AlertCircle;
+                MessageBox.Show($"Error validating token: \n{ex.Message}", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -461,7 +462,7 @@ namespace TokenValidator
 
                 using (var client = new HttpQuery())
                 {
-                    var result = client.PostAsync("https://api.scpslgame.com/v5/tools/validatetoken.php", postData).Result;
+                    var result = client.PostAsync("https://api.scpslgame.com/v5/tools/validatetoken6.php", postData).Result;
 
                     return JsonConvert.DeserializeObject<Dictionary<string, string>>(result);
                 }
@@ -481,9 +482,10 @@ namespace TokenValidator
         {
             if (decoded["success"] == "false")
             {
-                statusLabel.Text = "Error: " + decoded["error"];
+                statusLabel.Text = "Error: Token validation failed";
                 statusPanel.Background = ErrorBrush;
                 statusIcon.Kind = PackIconKind.AlertCircle;
+                MessageBox.Show($"Error validating token: \n{decoded["error"]}", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
 

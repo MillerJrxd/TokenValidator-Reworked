@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using System.Windows;
+using MessageBox = TokenValidator.CustomMessageBox;
 
 namespace TokenValidator
 {
@@ -48,7 +49,7 @@ namespace TokenValidator
         private static void LogUnhandledException(Exception exception, string source)
         {
             string errorMessage = $"An unhandled exception occurred: {exception.Message}";
-            System.Windows.MessageBox.Show(errorMessage, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(errorMessage, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
 
             try
             {

@@ -53,17 +53,17 @@ namespace TokenValidator.Utils
             catch (TaskCanceledException ex)
             {
                 Logging.LogException(ex);
-                throw new TimeoutException("The request timed out. Please check your network connection.\nA log has been created.");
+                throw new TimeoutException("The request timed out. Please check your network connection.");
             }
             catch (HttpRequestException ex)
             {
                 Logging.LogException(ex);
-                throw new Exception($"HTTP Post failed: {ex.Message}\nA log has been created.", ex);
+                throw new Exception($"HTTP Post failed: {ex.Message}", ex);
             }
             catch (Exception ex)
             {
                 Logging.LogException(ex);
-                throw new Exception($"HTTP Post failed: {ex.Message}\nA log has been created.", ex);
+                throw new Exception($"HTTP Post failed: {ex.Message}", ex);
             }
             finally
             {

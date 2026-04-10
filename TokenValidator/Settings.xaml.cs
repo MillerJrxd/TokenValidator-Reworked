@@ -2,7 +2,7 @@
 using System.Windows;
 using System.Windows.Input;
 using TokenValidator.Utils;
-using MessageBox = System.Windows.MessageBox;
+using MessageBox = TokenValidator.CustomMessageBox;
 
 namespace TokenValidator
 {
