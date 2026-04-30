@@ -83,6 +83,7 @@ namespace TokenValidator
         {
             InitializeComponent();
             InitLightweightComponents();
+
             Dispatcher.BeginInvoke(new Action(async () =>
             {
                 await InitHeavyComponents();
@@ -91,8 +92,11 @@ namespace TokenValidator
 
         private async Task InitHeavyComponents()
         {
-            CreateLogFolder();
-            await Task.Run(() => Logging.ClearLogs());
+            await Task.Run(() =>
+            {
+                CreateLogFolder();
+                Logging.ClearLogs();
+            });
 
             await LoadAuthentication();
             await InitHotkey();
@@ -162,6 +166,7 @@ namespace TokenValidator
                     catch (Exception ex)
                     {
                         _authenticated = false;
+                        Logging.LogException(ex);
                         Dispatcher.Invoke(() => UpdateAuthenticationUI(_authenticated));
                     }
                 }
@@ -288,11 +293,8 @@ namespace TokenValidator
                 try
                 {
                     var screens = System.Windows.Forms.Screen.AllScreens;
-
                     var timeoutTask = Task.Delay(10000, timeoutCts.Token);
-
                     var scanTask = _qrScanner.ScanAllScreensAsync(screens);
-
                     var completedTask = await Task.WhenAny(scanTask, timeoutTask);
 
                     Visibility = Visibility.Visible;
@@ -376,35 +378,45 @@ namespace TokenValidator
                 {
                     var pos = GetCursorPosition();
 
-                    var screenshot = new Bitmap(900, 900);
+                    int captureSize = 1200;
+                    int startX = Math.Max(0, pos.X - captureSize / 2);
+                    int startY = Math.Max(0, pos.Y - captureSize / 2);
+
+                    var screenshot = new Bitmap(captureSize, captureSize);
                     var graphics = Graphics.FromImage(screenshot);
-                    graphics.CopyFromScreen(pos.X - 450, pos.Y - 450, 0, 0, screenshot.Size);
-
-                    var bitmap = new Bitmap(screenshot);
-
-                    BarcodeReaderGeneric barcodeReader = new()
+                    
+                    try
                     {
-                        AutoRotate = true,
-                        Options = new DecodingOptions
+                        graphics.CopyFromScreen(startX, startY, 0, 0, screenshot.Size);
+
+                        var result = ScanQRFromBitmap(screenshot);
+                        if (result != null)
                         {
-                            PossibleFormats = new[] { BarcodeFormat.QR_CODE },
-                            TryHarder = true,
-                            TryInverted = true,
-                            CharacterSet = "UTF-8"
+                            await ValidateTokenAsync(result);
+                            return;
                         }
-                    };
 
-                    Result result = barcodeReader.Decode(bitmap);
+                        var scaleFactors = new[] { 1.5, 2.0, 2.5 };
+                        foreach (var scale in scaleFactors)
+                        {
+                            using (var scaled = ScaleBitmapLocal(screenshot, scale))
+                            {
+                                result = ScanQRFromBitmap(scaled);
+                                if (result != null)
+                                {
+                                    await ValidateTokenAsync(result);
+                                    return;
+                                }
+                            }
+                        }
 
-                    if (result == null)
-                    {
                         MessageBox.Show("QR code not found.", MsgHeader, MessageBoxButton.OK, MessageBoxImage.Error);
                         statusIcon.Kind = PackIconKind.AlertCircle;
                     }
-                    else
+                    finally
                     {
-                        string decoded = result.ToString().Trim();
-                        await ValidateTokenAsync(decoded);
+                        graphics?.Dispose();
+                        screenshot?.Dispose();
                     }
                 }
             }
@@ -418,6 +430,20 @@ namespace TokenValidator
                 GC.WaitForPendingFinalizers();
                 _isScanning = false;
             }
+        }
+
+        private static Bitmap ScaleBitmapLocal(Bitmap original, double scale)
+        {
+            int width = (int)(original.Width * scale);
+            int height = (int)(original.Height * scale);
+
+            var result = new Bitmap(width, height);
+            using (var graphics = Graphics.FromImage(result))
+            {
+                graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                graphics.DrawImage(original, 0, 0, width, height);
+            }
+            return result;
         }
         #endregion
 
@@ -462,7 +488,7 @@ namespace TokenValidator
 
                 using (var client = new HttpQuery())
                 {
-                    var result = client.PostAsync("https://api.scpslgame.com/v5/tools/validatetoken6.php", postData).Result;
+                    var result = client.PostAsync("https://api.scpslgame.com/v5/tools/validatetoken.php", postData).Result;
 
                     return JsonConvert.DeserializeObject<Dictionary<string, string>>(result);
                 }
@@ -728,7 +754,6 @@ namespace TokenValidator
         protected override void OnContentRendered(EventArgs e)
         {
             base.OnContentRendered(e);
-            ThemeManager.Initialize(this);
         }
 
         private async void ShowCopiedNotification()
@@ -852,6 +877,24 @@ namespace TokenValidator
                 mainGrid.Children.Remove(_copiedNotification);
                 _copiedNotification = null;
             }
+        }
+
+        private static string ScanQRFromBitmap(Bitmap bitmap)
+        {
+            var barcodeReader = new BarcodeReaderGeneric()
+            {
+                AutoRotate = true,
+                Options = new DecodingOptions
+                {
+                    PossibleFormats = new[] { BarcodeFormat.QR_CODE },
+                    TryHarder = true,
+                    TryInverted = true,
+                    CharacterSet = "UTF-8"
+                }
+            };
+
+            Result result = barcodeReader.Decode(bitmap);
+            return result?.Text;
         }
 
         public void Dispose()

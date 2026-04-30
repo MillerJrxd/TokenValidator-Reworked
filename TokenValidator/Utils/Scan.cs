@@ -146,7 +146,7 @@ namespace TokenValidator.Utils
         private static async Task<string> ScanAllScreensForQrCodeAsync(System.Windows.Forms.Screen[] screens, CancellationToken cancellationToken)
         {
             var resultFound = new ConcurrentQueue<string>();
-            var tcs = new TaskCompletionSource<string>();
+            var tcs = new TaskCompletionSource<string?>();
 
             using (var internalCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
             {
@@ -205,7 +205,7 @@ namespace TokenValidator.Utils
 
                     }
 
-                    if (resultFound.TryDequeue(out string qrResult))
+                    if (resultFound.TryDequeue(out string? qrResult))
                     {
                         return qrResult;
                     }
@@ -223,7 +223,7 @@ namespace TokenValidator.Utils
                 }
             }
         }
-
+        #pragma warning disable CS1998 //idgaf about not being async, fuck you
         private static async Task<string> ScanScreenForQrCodeAsync(System.Windows.Forms.Screen screen, CancellationToken cancellationToken)
         {
             if (cancellationToken.IsCancellationRequested)
@@ -243,6 +243,8 @@ namespace TokenValidator.Utils
                     if (result != null) return result;
                     cancellationToken.ThrowIfCancellationRequested();
 
+                    var stats = AnalyzeImageStats(screenshot);
+                    
                     var scaleFactors = new[] { 1.5, 2.0, 2.5, 3.0, 4.0 };
                     foreach (var scale in scaleFactors)
                     {
@@ -266,7 +268,7 @@ namespace TokenValidator.Utils
                     var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                     var options = new ParallelOptions { CancellationToken = cts.Token, MaxDegreeOfParallelism = Environment.ProcessorCount };
 
-                    string finalResult = null;
+                    string? finalResult = null;
 
                     try
                     {
@@ -287,7 +289,25 @@ namespace TokenValidator.Utils
                     catch (OperationCanceledException)
                     {
                     }
-                    return finalResult;
+                    
+                    if (finalResult != null) return finalResult;
+
+                    if (!cancellationToken.IsCancellationRequested && stats.Contrast < 0.4)
+                    {
+                        using (var otsu = OtsuThreshold(screenshot))
+                        {
+                            result = ScanBitmapForQrCode(otsu);
+                            if (result != null) return result;
+
+                            using (var scaledOtsu = ScaleBitmap(otsu, 2.0))
+                            {
+                                result = ScanBitmapForQrCode(scaledOtsu);
+                                if (result != null) return result;
+                            }
+                        }
+                    }
+
+                    return null;
                 }
             }
             catch (OperationCanceledException)
@@ -301,6 +321,7 @@ namespace TokenValidator.Utils
             }
             return null;
         }
+        #pragma warning restore CS1663
 
         private static string ScanBitmapForQrCode(Bitmap bitmap)
         {
@@ -319,6 +340,8 @@ namespace TokenValidator.Utils
             if (result != null) return result;
             if (cancellationToken.IsCancellationRequested) return null;
 
+            var stats = AnalyzeImageStats(originalBitmap);
+            
             using (var smartAdjusted = SmartContrastAdjustment(originalBitmap))
             {
                 result = ScanBitmapForQrCode(smartAdjusted);
@@ -336,25 +359,31 @@ namespace TokenValidator.Utils
                     result = ScanBitmapForQrCode(scaled);
                     if (result != null) return result;
 
-                    using (var scaledAdjusted = SmartContrastAdjustment(scaled))
+                    if (stats.Contrast < 0.35)
                     {
-                        result = ScanBitmapForQrCode(scaledAdjusted);
-                        if (result != null) return result;
+                        using (var scaledAdjusted = SmartContrastAdjustment(scaled))
+                        {
+                            result = ScanBitmapForQrCode(scaledAdjusted);
+                            if (result != null) return result;
+                        }
                     }
                 }
             }
 
-            if (!cancellationToken.IsCancellationRequested)
+            if (!cancellationToken.IsCancellationRequested && stats.Contrast < 0.25)
             {
                 using (var otsu = OtsuThreshold(originalBitmap))
                 {
                     result = ScanBitmapForQrCode(otsu);
                     if (result != null) return result;
 
-                    using (var scaledOtsu = ScaleBitmap(otsu, 2.0))
+                    if (!cancellationToken.IsCancellationRequested)
                     {
-                        result = ScanBitmapForQrCode(scaledOtsu);
-                        if (result != null) return result;
+                        using (var scaledOtsu = ScaleBitmap(otsu, 2.0))
+                        {
+                            result = ScanBitmapForQrCode(scaledOtsu);
+                            if (result != null) return result;
+                        }
                     }
                 }
             }
@@ -370,7 +399,9 @@ namespace TokenValidator.Utils
                 {
                     new { WidthPercent = 0.8, HeightPercent = 0.8, Name = "Theatre" },
                     new { WidthPercent = 0.7, HeightPercent = 0.7, Name = "Standard"},
-                    new { WidthPercent = 0.9, HeightPercent = 0.6, Name = "Wide" }
+                    new { WidthPercent = 0.9, HeightPercent = 0.6, Name = "Wide" },
+                    new { WidthPercent = 0.6, HeightPercent = 0.9, Name = "Tall" },
+                    new { WidthPercent = 0.5, HeightPercent = 0.5, Name = "Small" }
                 };
 
                 foreach (var config in cropConfigs)
@@ -398,6 +429,12 @@ namespace TokenValidator.Utils
                                 result = ScanBitmapForQrCode(enhanced);
                                 if (result != null) return result;
                             }
+                        }
+
+                        using (var scaledCrop = ScaleBitmap(croppedBitmap, 1.5))
+                        {
+                            result = ScanBitmapForQrCode(scaledCrop);
+                            if (result != null) return result;
                         }
                     }
                 }
@@ -486,7 +523,7 @@ namespace TokenValidator.Utils
                         byte b = *ptr++;
                         byte g = *ptr++;
                         byte r = *ptr++;
-                        ptr++; // Skip alpha
+                        ptr++;
 
                         int grayValue = (int)(0.299 * r + 0.587 * g + 0.114 * b);
                         histogram[grayValue]++;
@@ -643,7 +680,27 @@ namespace TokenValidator.Utils
                         }
                     }
                 }
-                else
+                
+                if (candidates.Count > 0)
+                {
+                    fastBitmap.UnlockBits();
+                    return candidates;
+                }
+
+                int mediumStep = Math.Max(baseStep, coarseStep / 2);
+                for (int y = 20; y < bitmap.Height - 20; y += mediumStep)
+                {
+                    for (int x = 20; x < bitmap.Width - 20; x += mediumStep)
+                    {
+                        if (IsLikelyFinderPattern(fastBitmap, x, y, 50))
+                        {
+                            candidates.Add(new Point(x, y));
+                            x += baseStep * 2;
+                        }
+                    }
+                }
+
+                if (candidates.Count == 0)
                 {
                     for (int y = 20; y < bitmap.Height - 20; y += baseStep)
                     {
@@ -727,9 +784,10 @@ namespace TokenValidator.Utils
             int sectionHeight = bitmap.Height / gridSize;
             int overlap = Math.Max(150, Math.Min(sectionWidth, sectionHeight) / 3);
 
-            var allRegions = new List<(Rectangle rect, double priority)>();
+            var allRegions = new List<(Rectangle rect, double priority)>(16);
 
-            Point center = new Point(bitmap.Width / 2, bitmap.Height / 2);
+            int centerX = bitmap.Width / 2;
+            int centerY = bitmap.Height / 2;
 
             for (int y = 0; y < gridSize; y++)
             {
@@ -742,28 +800,38 @@ namespace TokenValidator.Utils
 
                     var rect = new Rectangle(startX, startY, width, height);
 
-                    Point rectCenter = new Point(startX + width / 2, startY + height / 2);
-                    double distance = Math.Sqrt(Math.Pow(rectCenter.X - center.X, 2) + Math.Pow(rectCenter.Y - center.Y, 2));
+                    int rectCenterX = startX + width / 2;
+                    int rectCenterY = startY + height / 2;
+                    int dx = rectCenterX - centerX;
+                    int dy = rectCenterY - centerY;
+                    double distance = Math.Sqrt(dx * dx + dy * dy);
 
                     allRegions.Add((rect, distance));
                 }
             }
 
-            return allRegions
-                .OrderBy(r => r.priority)
-                .Select(r => r.rect)
-                .ToList();
+            allRegions.Sort((a, b) => a.priority.CompareTo(b.priority));
+
+            var result = new List<Rectangle>(allRegions.Count);
+            foreach (var item in allRegions)
+            {
+                result.Add(item.rect);
+            }
+            
+            return result;
         }
 
         private static unsafe (double Contrast, double Brightness) AnalyzeImageStats(Bitmap bitmap)
         {
-            var values = new List<int>();
-
             using (var fastBitmap = new LockBitmap(bitmap))
             {
                 fastBitmap.LockBits();
 
                 int sampleStep = Math.Max(2, Math.Min(bitmap.Width, bitmap.Height) / 300);
+
+                double sum = 0;
+                double sumSquared = 0;
+                int count = 0;
 
                 fixed (byte* ptr = fastBitmap.Pixels)
                 {
@@ -775,22 +843,24 @@ namespace TokenValidator.Utils
                             byte* pixel = ptr + offset;
 
                             int gray = (int)(0.299 * *(pixel + 2) + 0.587 * *(pixel + 1) + 0.114 * *pixel);
-                            values.Add(gray);
+                            sum += gray;
+                            sumSquared += gray * gray;
+                            count++;
                         }
                     }
                 }
 
                 fastBitmap.UnlockBits();
+
+                if (count == 0) return (0.5, 0.5);
+
+                double mean = sum / count;
+                double variance = (sumSquared / count) - (mean * mean);
+                double contrast = Math.Sqrt(variance) / 255.0;
+                double brightness = mean / 255.0;
+
+                return (contrast, brightness);
             }
-
-            if (values.Count == 0) return (0.5, 0.5);
-
-            double mean = values.Average();
-            double variance = values.Average(v => Math.Pow(v - mean, 2));
-            double contrast = Math.Sqrt(variance) / 255.0;
-            double brightness = mean / 255.0;
-
-            return (contrast, brightness);
         }
 
         private static Bitmap SmartContrastAdjustment(Bitmap original)
@@ -808,32 +878,39 @@ namespace TokenValidator.Utils
                 _statsCache[hash] = stats;
             }
 
+            int enhanceLevel = 0;
+            
             if (stats.Contrast < 0.2)
             {
-                return EnhanceImage(original, 3); 
+                enhanceLevel = 3; 
             }
             else if (stats.Contrast < 0.3)
             {
-                return EnhanceImage(original, 2);
+                enhanceLevel = 2;
             }
             else if (stats.Brightness < 0.25)
             {
-                return EnhanceImage(original, 2);
+                enhanceLevel = 2;
             }
             else if (stats.Brightness < 0.35)
             {
-                return EnhanceImage(original, 1);
+                enhanceLevel = 1;
             }
             else if (stats.Brightness > 0.75)
             {
-                return EnhanceImage(original, -2);
+                enhanceLevel = -2;
             }
             else if (stats.Brightness > 0.65)
             {
-                return EnhanceImage(original, -1);
+                enhanceLevel = -1;
             }
 
-            return new Bitmap(original);
+            if (enhanceLevel == 0)
+            {
+                return new Bitmap(original);
+            }
+
+            return EnhanceImage(original, enhanceLevel);
         }
         #endregion
 
